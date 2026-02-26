@@ -1,13 +1,17 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { upload } from "@vercel/blob/client";
 import Link from "next/link";
 
 export default function NewProjectPage() {
+  const router = useRouter();
   const [projectName, setProjectName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
   const [error, setError] = useState("");
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -69,14 +73,43 @@ export default function NewProjectPage() {
     setError("");
 
     try {
-      // TODO: Upload to Vercel Blob, create Airtable record, redirect to workspace
-      // For now, just show it works
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      alert("Upload flow will be connected once Airtable base is configured.");
-    } catch {
-      setError("Something went wrong. Please try again.");
+      // Step 1: Upload .glb to Vercel Blob
+      setUploadStatus("Uploading 3D model...");
+      const blob = await upload(file.name, file, {
+        access: "public",
+        handleUploadUrl: "/api/upload/token",
+      });
+
+      // Step 2: Create project in Airtable
+      setUploadStatus("Creating project...");
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: projectName.trim(),
+          email: "placeholder@solespec.app", // Until auth is built
+          modelUrl: blob.url,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to create project");
+      }
+
+      const project = await response.json();
+
+      // Step 3: Redirect to workspace
+      router.push(`/project/${project.id}`);
+    } catch (err) {
+      setError(
+        err instanceof Error && err.message !== "Failed to fetch"
+          ? err.message
+          : "Something went wrong. Please try again."
+      );
     } finally {
       setUploading(false);
+      setUploadStatus("");
     }
   };
 
@@ -277,7 +310,7 @@ export default function NewProjectPage() {
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-                Uploading...
+                {uploadStatus || "Uploading..."}
               </span>
             ) : (
               "Create Tech Pack"

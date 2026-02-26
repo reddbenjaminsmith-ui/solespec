@@ -46,3 +46,5 @@ next-env.d.ts
 .claude/statsig/
 .claude/todos/
 .claude/.credentials.json
+
+.env*.local
