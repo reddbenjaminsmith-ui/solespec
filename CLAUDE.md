@@ -93,7 +93,7 @@ src/
 
 ## Deployment
 
-- **Live URL:** TBD (solespec.vercel.app or similar)
+- **Live URL:** https://solespec.vercel.app
 - **GitHub:** https://github.com/reddbenjaminsmith-ui/solespec
 - **Vercel:** Auto-deploy from main branch
 
