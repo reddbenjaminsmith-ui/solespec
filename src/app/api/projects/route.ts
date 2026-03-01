@@ -52,7 +52,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { name, email, modelUrl } = body;
+    const { name, email, modelUrl, sourceType, sketchUrl, predecessorModelUrl } = body;
 
     // Validate name
     if (typeof name !== "string" || name.trim().length === 0) {
@@ -86,31 +86,67 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate modelUrl
-    if (typeof modelUrl !== "string" || !isValidUrl(modelUrl)) {
-      return NextResponse.json(
-        { error: "Valid model URL is required" },
-        { status: 400 }
-      );
+    // Validate sourceType
+    const validSourceTypes = ["3D Model", "Sketch"];
+    const resolvedSourceType = validSourceTypes.includes(sourceType) ? sourceType : "3D Model";
+
+    // For sketch projects, validate sketch and predecessor URLs instead of modelUrl
+    if (resolvedSourceType === "Sketch") {
+      if (typeof sketchUrl !== "string" || !isValidUrl(sketchUrl)) {
+        return NextResponse.json(
+          { error: "Valid sketch image URL is required" },
+          { status: 400 }
+        );
+      }
+      if (typeof predecessorModelUrl !== "string" || !isValidUrl(predecessorModelUrl)) {
+        return NextResponse.json(
+          { error: "Valid predecessor model URL is required" },
+          { status: 400 }
+        );
+      }
+    } else {
+      // For 3D Model projects, validate modelUrl
+      if (typeof modelUrl !== "string" || !isValidUrl(modelUrl)) {
+        return NextResponse.json(
+          { error: "Valid model URL is required" },
+          { status: 400 }
+        );
+      }
     }
 
-    const record = await projectsTable.create({
+    // Build Airtable record fields
+    const fields: Record<string, string | number> = {
       Name: name.trim(),
       Email: email.trim().toLowerCase(),
       Status: "draft",
-      "Model URL": modelUrl,
       "Wizard Step": 0,
-    });
+      "Source Type": resolvedSourceType,
+    };
+
+    if (resolvedSourceType === "Sketch") {
+      fields["Sketch URL"] = sketchUrl;
+      fields["Predecessor Model URL"] = predecessorModelUrl;
+      // Set the predecessor as the model URL so it can be viewed in the workspace
+      fields["Model URL"] = predecessorModelUrl;
+    } else {
+      fields["Model URL"] = modelUrl;
+    }
+
+    const record = await projectsTable.create(fields);
 
     return NextResponse.json({
       id: record.getId(),
       name: record.get("Name"),
       email: record.get("Email"),
       status: record.get("Status"),
-      modelUrl: record.get("Model URL"),
+      modelUrl: record.get("Model URL") || "",
       thumbnailUrl: record.get("Thumbnail URL") || "",
       wizardStep: record.get("Wizard Step") || 0,
       createdAt: record.get("Created") || new Date().toISOString(),
+      sourceType: record.get("Source Type") || "3D Model",
+      sketchUrl: record.get("Sketch URL") || "",
+      predecessorModelUrl: record.get("Predecessor Model URL") || "",
+      sketchAnalysis: record.get("Sketch Analysis") || "",
     });
   } catch (error) {
     console.error(
@@ -171,6 +207,10 @@ export async function GET(request: Request) {
       thumbnailUrl: record.get("Thumbnail URL") || "",
       wizardStep: record.get("Wizard Step") || 0,
       createdAt: record.get("Created") || "",
+      sourceType: record.get("Source Type") || "3D Model",
+      sketchUrl: record.get("Sketch URL") || "",
+      predecessorModelUrl: record.get("Predecessor Model URL") || "",
+      sketchAnalysis: record.get("Sketch Analysis") || "",
     }));
 
     return NextResponse.json({ projects });

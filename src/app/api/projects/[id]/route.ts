@@ -40,6 +40,10 @@ export async function GET(
       thumbnailUrl: record.get("Thumbnail URL") || "",
       wizardStep: record.get("Wizard Step") || 0,
       createdAt: record.get("Created") || "",
+      sourceType: record.get("Source Type") || "3D Model",
+      sketchUrl: record.get("Sketch URL") || "",
+      predecessorModelUrl: record.get("Predecessor Model URL") || "",
+      sketchAnalysis: record.get("Sketch Analysis") || "",
     });
   } catch (error) {
     const message =
@@ -149,6 +153,17 @@ export async function PATCH(
       );
     }
 
+    // Support updating sketch-specific fields
+    if (body.sketchAnalysis !== undefined) {
+      if (typeof body.sketchAnalysis !== "string" || body.sketchAnalysis.length > 50000) {
+        return NextResponse.json(
+          { error: "Sketch analysis must be a string under 50000 characters" },
+          { status: 400 }
+        );
+      }
+      updates["Sketch Analysis"] = body.sketchAnalysis;
+    }
+
     const record = await projectsTable.update(id, updates);
 
     return NextResponse.json({
@@ -160,6 +175,10 @@ export async function PATCH(
       thumbnailUrl: record.get("Thumbnail URL") || "",
       wizardStep: record.get("Wizard Step") || 0,
       createdAt: record.get("Created") || "",
+      sourceType: record.get("Source Type") || "3D Model",
+      sketchUrl: record.get("Sketch URL") || "",
+      predecessorModelUrl: record.get("Predecessor Model URL") || "",
+      sketchAnalysis: record.get("Sketch Analysis") || "",
     });
   } catch (error) {
     const message =

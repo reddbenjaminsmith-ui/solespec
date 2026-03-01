@@ -10,6 +10,25 @@ export interface Project {
   thumbnailUrl: string;
   wizardStep: number;
   createdAt: string;
+  sourceType: "3D Model" | "Sketch";
+  sketchUrl?: string;
+  predecessorModelUrl?: string;
+  sketchAnalysis?: string;
+}
+
+// Sketch analysis result from GPT-5.2 Vision
+export interface SketchAnalysisResult {
+  components: {
+    name: string;
+    category: string;
+    region: string;
+    description: string;
+  }[];
+  panelLines: string[];
+  designElements: string[];
+  shoeType: string;
+  constructionNotes: string;
+  styleDescription: string;
 }
 
 // Rendered view from 3D model

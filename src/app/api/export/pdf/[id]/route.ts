@@ -54,6 +54,7 @@ export async function GET(
       thumbnailUrl: (projectRecord.fields["Thumbnail URL"] as string) || "",
       wizardStep: (projectRecord.fields["Wizard Step"] as number) || 0,
       createdAt: projectRecord.fields["Created"] as string || new Date().toISOString(),
+      sourceType: (projectRecord.fields["Source Type"] as Project["sourceType"]) || "3D Model",
     };
 
     // Fetch all related data in parallel

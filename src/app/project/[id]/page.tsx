@@ -8,13 +8,13 @@ import type { ThreeRefs } from "@/components/ModelViewerWrapper";
 import ViewCaptureWrapper from "@/components/ViewCaptureWrapper";
 import PhotorealisticRender from "@/components/PhotorealisticRender";
 import WizardContainer from "@/components/wizard/WizardContainer";
-import type { Project, RenderedView } from "@/lib/types";
+import type { Project, RenderedView, SketchAnalysisResult } from "@/lib/types";
 import type * as THREE from "three";
 import { CAMERA_POSITIONS } from "@/lib/three/camera-positions";
 import type { TechnicalView } from "@/lib/constants";
 import { useSSEStream } from "@/lib/useSSEStream";
 
-type WorkspacePhase = "capture" | "analysis" | "wizard" | "complete";
+type WorkspacePhase = "sketch-analysis" | "sketch-views" | "capture" | "analysis" | "wizard" | "complete";
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -47,6 +47,16 @@ export default function ProjectWorkspacePage() {
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1);
 
+  // Sketch workflow state
+  const [sketchAnalysisResult, setSketchAnalysisResult] = useState<SketchAnalysisResult | null>(null);
+  const [sketchStatus, setSketchStatus] = useState("");
+  const [sketchError, setSketchError] = useState("");
+  const [generatedViews, setGeneratedViews] = useState<Array<{ viewName: string; imageUrl: string }>>([]);
+  const [viewGenStatus, setViewGenStatus] = useState("");
+  const [viewGenError, setViewGenError] = useState("");
+  const { start: startSketchSSE, isStreaming: analyzingSketch } = useSSEStream();
+  const { start: startViewGenSSE, isStreaming: generatingViews } = useSSEStream();
+
   // Fetch project + existing views
   useEffect(() => {
     async function fetchData() {
@@ -64,12 +74,15 @@ export default function ProjectWorkspacePage() {
         setProject(data);
 
         // Check for existing views
+        let fetchedViewCount = 0;
         const viewsRes = await fetch(`/api/views?projectId=${projectId}`);
         if (viewsRes.ok) {
           const viewsData = await viewsRes.json();
           if (viewsData.views && viewsData.views.length > 0) {
             setViews(viewsData.views);
-            if (viewsData.views.length >= 7) {
+            fetchedViewCount = viewsData.views.length;
+            const minViews = data.sourceType === "Sketch" ? 5 : 7;
+            if (viewsData.views.length >= minViews) {
               setCaptureComplete(true);
             }
           }
@@ -86,6 +99,21 @@ export default function ProjectWorkspacePage() {
           setPhase("wizard");
           setWizardStep(1);
           setCaptureComplete(true);
+        } else if (data.sourceType === "Sketch") {
+          // Sketch workflow: determine where to resume
+          if (data.sketchAnalysis) {
+            try {
+              setSketchAnalysisResult(JSON.parse(data.sketchAnalysis));
+            } catch { /* ignore parse error */ }
+          }
+          if (fetchedViewCount >= 5) {
+            setCaptureComplete(true);
+            setPhase("analysis");
+          } else if (data.sketchAnalysis) {
+            setPhase("sketch-views");
+          } else {
+            setPhase("sketch-analysis");
+          }
         }
       } catch {
         setError("Failed to load project");
@@ -176,6 +204,141 @@ export default function ProjectWorkspacePage() {
       }
     );
   }, [projectId, startSSE]);
+
+  // Sketch analysis handler
+  const handleStartSketchAnalysis = useCallback(() => {
+    setSketchStatus("Starting sketch analysis...");
+    setSketchError("");
+    setSketchAnalysisResult(null);
+
+    startSketchSSE(
+      "/api/sketch/analyze",
+      { projectId },
+      {
+        onEvent: (event, data) => {
+          const d = data as Record<string, unknown>;
+          switch (event) {
+            case "status":
+              setSketchStatus((d.message as string) || "Processing...");
+              break;
+            case "analysis":
+            case "complete":
+              if (d.analysis) {
+                setSketchAnalysisResult(d.analysis as unknown as SketchAnalysisResult);
+                setSketchStatus("Analysis complete");
+              }
+              break;
+            case "error":
+              setSketchError((d.message as string) || "Analysis failed");
+              break;
+          }
+        },
+        onError: (err) => {
+          setSketchError(err);
+        },
+      }
+    );
+  }, [projectId, startSketchSSE]);
+
+  // View generation handler
+  const handleStartViewGeneration = useCallback(() => {
+    setViewGenStatus("Starting view generation...");
+    setViewGenError("");
+    setGeneratedViews([]);
+
+    startViewGenSSE(
+      "/api/sketch/generate-views",
+      { projectId },
+      {
+        onEvent: (event, data) => {
+          const d = data as Record<string, unknown>;
+          switch (event) {
+            case "status":
+              setViewGenStatus((d.message as string) || "Processing...");
+              break;
+            case "view_saved":
+              setGeneratedViews(prev => [...prev, {
+                viewName: d.viewName as string,
+                imageUrl: d.imageUrl as string,
+              }]);
+              setViews(prev => [...prev, {
+                id: d.recordId as string,
+                projectId,
+                viewName: d.viewName as string,
+                imageUrl: d.imageUrl as string,
+              } as RenderedView]);
+              break;
+            case "view_error":
+              setViewGenStatus(`Warning: Failed to generate ${d.viewName} view`);
+              break;
+            case "complete":
+              setViewGenStatus("All views generated");
+              setCaptureComplete(true);
+              break;
+            case "error":
+              setViewGenError((d.message as string) || "View generation failed");
+              break;
+          }
+        },
+        onError: (err) => {
+          setViewGenError(err);
+        },
+      }
+    );
+  }, [projectId, startViewGenSSE]);
+
+  // Transition from sketch-analysis to sketch-views and start generation
+  const handleGenerateViews = useCallback(() => {
+    setPhase("sketch-views");
+    setViewGenStatus("Starting view generation...");
+    setViewGenError("");
+    setGeneratedViews([]);
+
+    startViewGenSSE(
+      "/api/sketch/generate-views",
+      { projectId },
+      {
+        onEvent: (event, data) => {
+          const d = data as Record<string, unknown>;
+          switch (event) {
+            case "status":
+              setViewGenStatus((d.message as string) || "Processing...");
+              break;
+            case "view_saved":
+              setGeneratedViews(prev => [...prev, {
+                viewName: d.viewName as string,
+                imageUrl: d.imageUrl as string,
+              }]);
+              setViews(prev => [...prev, {
+                id: d.recordId as string,
+                projectId,
+                viewName: d.viewName as string,
+                imageUrl: d.imageUrl as string,
+              } as RenderedView]);
+              break;
+            case "view_error":
+              setViewGenStatus(`Warning: Failed to generate ${d.viewName} view`);
+              break;
+            case "complete":
+              setViewGenStatus("All views generated");
+              setCaptureComplete(true);
+              break;
+            case "error":
+              setViewGenError((d.message as string) || "View generation failed");
+              break;
+          }
+        },
+        onError: (err) => {
+          setViewGenError(err);
+        },
+      }
+    );
+  }, [projectId, startViewGenSSE]);
+
+  // Transition from sketch-views to analysis
+  const handleSketchContinue = useCallback(() => {
+    setPhase("analysis");
+  }, []);
 
   const handleGoToWizard = useCallback(() => {
     setPhase("wizard");
@@ -297,10 +460,19 @@ export default function ProjectWorkspacePage() {
 
       {/* Main workspace */}
       <div className="flex-1 flex flex-col lg:flex-row">
-        {/* Left: 3D Viewer */}
+        {/* Left: Sketch Image or 3D Viewer */}
         <div className="lg:w-[60%] p-4 lg:p-6">
           <div className="h-[50vh] lg:h-full rounded-2xl overflow-hidden border border-white/[0.06]">
-            {project.modelUrl ? (
+            {(phase === "sketch-analysis" || phase === "sketch-views") && project.sketchUrl ? (
+              <div className="w-full h-full flex items-center justify-center bg-surface-900/80 p-6">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={project.sketchUrl}
+                  alt="Shoe sketch"
+                  className="max-w-full max-h-full object-contain rounded-lg"
+                />
+              </div>
+            ) : project.modelUrl ? (
               <ModelViewerWrapper
                 modelUrl={project.modelUrl}
                 onModelLoaded={handleModelLoaded}
@@ -316,6 +488,288 @@ export default function ProjectWorkspacePage() {
 
         {/* Right panel - changes based on phase */}
         <div className="lg:w-[40%] p-4 lg:p-6 lg:pl-0 flex flex-col gap-4">
+          {/* Phase: Sketch Analysis */}
+          {phase === "sketch-analysis" && (
+            <>
+              <div>
+                <h2
+                  className="text-base font-semibold text-white mb-1"
+                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                >
+                  Sketch Analysis
+                </h2>
+                <p className="text-xs text-slate-500">
+                  AI analyzes your sketch to identify components and design elements
+                </p>
+              </div>
+
+              <div className="glass-card-static p-6 rounded-xl">
+                {!analyzingSketch && !sketchAnalysisResult && !sketchError && (
+                  <div className="text-center">
+                    <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-cyan-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
+                      </svg>
+                    </div>
+                    <h3
+                      className="text-sm font-semibold text-white mb-1"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    >
+                      Analyze Your Sketch
+                    </h3>
+                    <p className="text-xs text-slate-500 mb-4">
+                      GPT-5.2 Vision will identify components, panel lines, and design elements from your lateral sketch
+                    </p>
+                    <button
+                      onClick={handleStartSketchAnalysis}
+                      className="btn-primary px-5 py-2.5 rounded-xl text-sm"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+                      </svg>
+                      Run Sketch Analysis
+                    </button>
+                  </div>
+                )}
+
+                {analyzingSketch && (
+                  <div className="text-center">
+                    <div className="w-10 h-10 mx-auto mb-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+                    <p className="text-sm text-white mb-1">{sketchStatus}</p>
+                    <p className="text-xs text-slate-500">This may take 15-30 seconds</p>
+                  </div>
+                )}
+
+                {sketchError && (
+                  <div className="text-center">
+                    <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-red-500/10 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm text-red-400 mb-3">{sketchError}</p>
+                    <button onClick={handleStartSketchAnalysis} className="btn-secondary px-4 py-2 rounded-xl text-sm">
+                      Retry Analysis
+                    </button>
+                  </div>
+                )}
+
+                {sketchAnalysisResult && !analyzingSketch && (
+                  <div className="text-center">
+                    <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                      </svg>
+                    </div>
+                    <h3
+                      className="text-sm font-semibold text-white mb-2"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    >
+                      Sketch Analyzed
+                    </h3>
+                    <div className="flex justify-center gap-6 mb-3">
+                      <div className="text-center">
+                        <p
+                          className="text-2xl font-bold text-cyan-400"
+                          style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                        >
+                          {sketchAnalysisResult.components.length}
+                        </p>
+                        <p className="text-xs text-slate-500">Components</p>
+                      </div>
+                      <div className="text-center">
+                        <p
+                          className="text-2xl font-bold text-cyan-400"
+                          style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                        >
+                          {sketchAnalysisResult.panelLines.length}
+                        </p>
+                        <p className="text-xs text-slate-500">Panel Lines</p>
+                      </div>
+                    </div>
+                    {sketchAnalysisResult.shoeType && (
+                      <p className="text-xs text-slate-400 mb-1">
+                        Type: {sketchAnalysisResult.shoeType}
+                      </p>
+                    )}
+                    {sketchAnalysisResult.styleDescription && (
+                      <p className="text-xs text-slate-500 mb-4 max-w-xs mx-auto">
+                        {sketchAnalysisResult.styleDescription}
+                      </p>
+                    )}
+                    <button
+                      onClick={handleGenerateViews}
+                      className="btn-primary px-6 py-2.5 rounded-xl text-sm"
+                    >
+                      Generate Multi-View Images
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Component list */}
+              {sketchAnalysisResult && sketchAnalysisResult.components.length > 0 && (
+                <div>
+                  <p className="section-label mb-2">Detected Components</p>
+                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                    {sketchAnalysisResult.components.map((comp, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.04]"
+                      >
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 uppercase tracking-wider"
+                          style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                        >
+                          {comp.category}
+                        </span>
+                        <span className="text-xs text-white">{comp.name}</span>
+                        <span className="text-[10px] text-slate-500 ml-auto">{comp.region}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Phase: Sketch Views */}
+          {phase === "sketch-views" && (
+            <>
+              <div>
+                <h2
+                  className="text-base font-semibold text-white mb-1"
+                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                >
+                  Multi-View Generation
+                </h2>
+                <p className="text-xs text-slate-500">
+                  AI generates additional angles from your lateral sketch
+                </p>
+              </div>
+
+              <div className="glass-card-static p-6 rounded-xl">
+                {!generatingViews && generatedViews.length === 0 && !viewGenError && (
+                  <div className="text-center">
+                    <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-cyan-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
+                      </svg>
+                    </div>
+                    <h3
+                      className="text-sm font-semibold text-white mb-1"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    >
+                      Ready to Generate Views
+                    </h3>
+                    <p className="text-xs text-slate-500 mb-4">
+                      Generate medial, front, back, and 3/4 views from your sketch
+                    </p>
+                    <button
+                      onClick={handleStartViewGeneration}
+                      className="btn-primary px-5 py-2.5 rounded-xl text-sm"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
+                      </svg>
+                      Generate Views
+                    </button>
+                  </div>
+                )}
+
+                {generatingViews && (
+                  <div className="text-center">
+                    <div className="w-10 h-10 mx-auto mb-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+                    <p className="text-sm text-white mb-1">{viewGenStatus}</p>
+                    <p className="text-xs text-slate-500">Each view takes 15-30 seconds</p>
+                    {generatedViews.length > 0 && (
+                      <p className="text-xs text-cyan-400 mt-2">
+                        {generatedViews.length} view{generatedViews.length !== 1 ? "s" : ""} generated
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {viewGenError && !generatingViews && (
+                  <div className="text-center">
+                    <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-red-500/10 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm text-red-400 mb-3">{viewGenError}</p>
+                    <button onClick={handleStartViewGeneration} className="btn-secondary px-4 py-2 rounded-xl text-sm">
+                      Retry Generation
+                    </button>
+                  </div>
+                )}
+
+                {!generatingViews && generatedViews.length > 0 && !viewGenError && (
+                  <div className="text-center">
+                    <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                      </svg>
+                    </div>
+                    <h3
+                      className="text-sm font-semibold text-white mb-2"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    >
+                      Views Generated
+                    </h3>
+                    <p className="text-xs text-slate-500 mb-4">
+                      {generatedViews.length} views ready for tech pack generation
+                    </p>
+                    <button
+                      onClick={handleSketchContinue}
+                      className="btn-primary px-6 py-2.5 rounded-xl text-sm"
+                    >
+                      Continue to Tech Pack
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Generated views grid */}
+              {generatedViews.length > 0 && (
+                <div>
+                  <p className="section-label mb-2">Generated Views</p>
+                  <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 flex-1 content-start">
+                    {generatedViews.map((view) => (
+                      <div
+                        key={view.viewName}
+                        className="group rounded-xl overflow-hidden border border-white/[0.06] bg-surface-900/50 transition-all duration-200 hover:border-accent/20"
+                      >
+                        <div className="aspect-square relative bg-surface-950">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={view.imageUrl}
+                            alt={`${view.viewName} view`}
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <div className="px-3 py-2">
+                          <p
+                            className="text-xs text-slate-300 font-medium"
+                            style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                          >
+                            {view.viewName.replace("_", " ")}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
           {/* Phase: Capture */}
           {phase === "capture" && (
             <>
