@@ -1,12 +1,32 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import StatusBadge from "@/components/StatusBadge";
+import type { Project } from "@/lib/types";
 
-// Dashboard - shows user's tech pack projects
-// Will fetch from Airtable once auth + base are set up
 export default function DashboardPage() {
-  // TODO: Fetch projects from Airtable filtered by user email
-  const projects: never[] = [];
+  const router = useRouter();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchProjects() {
+      try {
+        const res = await fetch("/api/projects?email=placeholder@solespec.app");
+        if (res.ok) {
+          const data = await res.json();
+          setProjects(data.projects || []);
+        }
+      } catch {
+        // Will show empty state
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProjects();
+  }, []);
 
   return (
     <div className="min-h-screen">
@@ -57,8 +77,26 @@ export default function DashboardPage() {
           </p>
         </div>
 
+        {/* Loading skeleton */}
+        {loading && (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="glass-card-static rounded-2xl overflow-hidden">
+                <div className="aspect-video skeleton" />
+                <div className="p-4 space-y-3">
+                  <div className="h-5 w-3/4 skeleton" />
+                  <div className="flex items-center justify-between">
+                    <div className="h-4 w-20 skeleton" />
+                    <div className="h-3 w-24 skeleton" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Project grid or empty state */}
-        {projects.length === 0 ? (
+        {!loading && projects.length === 0 && (
           <div className="glass-card-static p-16 text-center rounded-2xl">
             <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-accent/10 flex items-center justify-center">
               <svg
@@ -105,9 +143,58 @@ export default function DashboardPage() {
               Upload Your First 3D Model
             </Link>
           </div>
-        ) : (
+        )}
+
+        {!loading && projects.length > 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Project cards will go here */}
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                onClick={() => router.push(`/project/${project.id}`)}
+                className="glass-card rounded-2xl overflow-hidden text-left group"
+              >
+                {/* Thumbnail */}
+                <div className="aspect-video bg-surface-900/50 relative overflow-hidden">
+                  {project.thumbnailUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={project.thumbnailUrl}
+                      alt={project.name}
+                      className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <svg className="w-10 h-10 text-slate-700" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m21 7.5-2.25-1.313M21 7.5v2.25m0-2.25-2.25 1.313M3 7.5l2.25-1.313M3 7.5l2.25 1.313M3 7.5v2.25m9 3 2.25-1.313M12 12.75l-2.25-1.313M12 12.75V15m0 6.75 2.25-1.313M12 21.75V19.5m0 2.25-2.25-1.313m0-16.875L12 2.25l2.25 1.313M21 14.25v2.25l-2.25 1.313m-13.5 0L3 16.5v-2.25" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+
+                {/* Info */}
+                <div className="p-4">
+                  <h3
+                    className="text-sm font-semibold text-white truncate mb-2"
+                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                  >
+                    {project.name}
+                  </h3>
+                  <div className="flex items-center justify-between">
+                    <StatusBadge status={project.status} />
+                    <span
+                      className="text-[10px] text-slate-600"
+                      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                    >
+                      {new Date(project.createdAt).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </button>
+            ))}
           </div>
         )}
       </main>
