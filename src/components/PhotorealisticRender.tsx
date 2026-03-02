@@ -20,6 +20,7 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
   const [renderedViews, setRenderedViews] = useState<RenderView[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
   const [failedCount, setFailedCount] = useState(0);
+  const [lastFailMsg, setLastFailMsg] = useState("");
   const errorRef = useRef(false);
   const { start, isStreaming } = useSSEStream();
 
@@ -27,6 +28,7 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
     setPhase("streaming");
     setRenderedViews([]);
     setFailedCount(0);
+    setLastFailMsg("");
     setProgress({ current: 0, total: 7, viewName: "" });
     errorRef.current = false;
 
@@ -49,6 +51,7 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
             break;
           case "viewError":
             setFailedCount((prev) => prev + 1);
+            setLastFailMsg((d.message as string) || "");
             break;
           case "complete": {
             if (errorRef.current) break;
@@ -183,11 +186,16 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
             </svg>
           </div>
           <p className="text-sm text-amber-400 mb-1">All renders failed</p>
-          <p className="text-xs text-slate-500 mb-4">
+          <p className="text-xs text-slate-500 mb-3">
             {failedCount > 0
-              ? `${failedCount} view${failedCount !== 1 ? "s" : ""} failed to generate. This can happen when the AI service is busy.`
+              ? `${failedCount} view${failedCount !== 1 ? "s" : ""} failed to generate.`
               : "No views could be generated. The AI service may be temporarily unavailable."}
           </p>
+          {lastFailMsg && (
+            <p className="text-xs text-slate-400 mb-4 px-3 py-2 bg-white/[0.03] rounded-lg" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              {lastFailMsg}
+            </p>
+          )}
           <button onClick={handleStart} className="btn-secondary px-4 py-2 rounded-xl text-sm">
             Retry
           </button>

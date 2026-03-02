@@ -177,9 +177,31 @@ export async function POST(request: Request) {
               break;
             }
 
+            // Detect auth/permission errors - stop early, all views will fail the same way
+            const isAuthError = errMsg.includes("403") || errMsg.includes("401") || errMsg.includes("PERMISSION_DENIED") || errMsg.includes("API_KEY");
+            if (isAuthError) {
+              errorSent = true;
+              sendEvent("error", {
+                message: "Gemini API key is invalid or lacks permission for image generation. Check your API key at ai.google.dev.",
+              });
+              break;
+            }
+
+            // Detect model not found
+            const isModelError = errMsg.includes("404") || errMsg.includes("not found") || errMsg.includes("NOT_FOUND");
+            if (isModelError) {
+              errorSent = true;
+              sendEvent("error", {
+                message: `Gemini model "${GEMINI_IMAGE_MODEL}" not found. It may not be available for your account.`,
+              });
+              break;
+            }
+
+            // For other errors, include a safe summary (truncate to avoid leaking internals)
+            const safeMsg = errMsg.length > 120 ? errMsg.slice(0, 120) + "..." : errMsg;
             sendEvent("viewError", {
               viewName: view.viewName,
-              message: "Rendering failed for this view",
+              message: `Render failed: ${safeMsg}`,
             });
           }
         }
