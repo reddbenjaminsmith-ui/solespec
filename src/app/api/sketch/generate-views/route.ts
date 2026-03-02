@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { projectsTable, renderedViewsTable, isValidRecordId } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
-import { getOpenAI, OPENAI_MODEL } from "@/lib/ai/openai";
+import { getOpenAI, OPENAI_MODEL, OPENAI_IMAGE_MODEL } from "@/lib/ai/openai";
 import { put } from "@vercel/blob";
 import { VIEW_CONFIGS, buildPredecessorViewPromptMessages } from "@/lib/ai/sketch-prompts";
 
@@ -163,7 +163,7 @@ export async function POST(request: Request) {
 
               // Step 2: generate image from the detailed prompt
               const response = await openai.images.generate({
-                model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
+                model: OPENAI_IMAGE_MODEL,
                 prompt: imagePrompt,
                 n: 1,
                 size: "1024x1024",
