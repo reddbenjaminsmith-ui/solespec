@@ -254,13 +254,21 @@ export async function POST(request: Request) {
           });
         } catch (analysisError) {
           // Extract useful diagnostic info without leaking secrets
-          const errMsg = analysisError instanceof Error ? analysisError.message : "Unknown error";
+          let errMsg = "Unknown error";
+          if (analysisError instanceof Error) {
+            errMsg = analysisError.message;
+          } else if (typeof analysisError === "string") {
+            errMsg = analysisError;
+          } else {
+            try { errMsg = JSON.stringify(analysisError).substring(0, 300); } catch { errMsg = String(analysisError); }
+          }
           const errStatus = (analysisError as { status?: number }).status;
           const errCode = (analysisError as { code?: string }).code;
           const errType = (analysisError as { type?: string }).type;
+          const errName = analysisError instanceof Error ? analysisError.constructor.name : typeof analysisError;
           console.error(
             "AI analysis failed:",
-            JSON.stringify({ message: errMsg, status: errStatus, code: errCode, type: errType })
+            JSON.stringify({ name: errName, message: errMsg, status: errStatus, code: errCode, type: errType })
           );
 
           // Reset project status on failure
@@ -287,7 +295,7 @@ export async function POST(request: Request) {
           }
 
           // Include debug info to diagnose production failures
-          const debugInfo = `[${errStatus || "no-status"}/${errCode || "no-code"}] ${errMsg.substring(0, 200)}`;
+          const debugInfo = `[${errName}:${errStatus || "no-status"}/${errCode || "no-code"}] ${errMsg.substring(0, 200)}`;
 
           sendEvent("error", {
             message: `${clientMessage} Debug: ${debugInfo}`,
