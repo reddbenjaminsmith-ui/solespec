@@ -17,7 +17,6 @@ interface StudioRenderProps {
   threeRefs: ThreeRefs | null;
   modelScene: THREE.Group | null;
   existingRenders?: RenderedView[];
-  onStudioModeChange: (active: boolean) => void;
   onComplete?: (views: RenderedView[]) => void;
 }
 
@@ -48,7 +47,6 @@ export default function StudioRender({
   threeRefs,
   modelScene,
   existingRenders,
-  onStudioModeChange,
   onComplete,
 }: StudioRenderProps) {
   const hasExisting = existingRenders && existingRenders.length > 0;
@@ -74,12 +72,6 @@ export default function StudioRender({
     setPhase("rendering");
     setRenderedViews([]);
     setErrorMsg("");
-
-    // Switch to studio mode
-    onStudioModeChange(true);
-
-    // Wait for renderer to settle with new settings
-    await new Promise((r) => setTimeout(r, 800));
 
     const { camera, gl, controls, scene, canvas } = threeRefs;
     const dims = extractDimensions(modelScene);
@@ -179,11 +171,9 @@ export default function StudioRender({
       cam.aspect = origAspect;
       cam.updateProjectionMatrix();
 
-      // Switch back to design mode
-      onStudioModeChange(false);
       renderingRef.current = false;
     }
-  }, [threeRefs, modelScene, projectId, onStudioModeChange, onComplete]);
+  }, [threeRefs, modelScene, projectId, onComplete]);
 
   if (phase === "idle") {
     return (

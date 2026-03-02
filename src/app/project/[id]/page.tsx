@@ -79,9 +79,6 @@ export default function ProjectWorkspacePage() {
   const { start: startSketchSSE, isStreaming: analyzingSketch } = useSSEStream();
   const { start: startViewGenSSE, isStreaming: generatingViews } = useSSEStream();
 
-  // Studio rendering mode
-  const [studioMode, setStudioMode] = useState(false);
-
   // Separate basic captures from photorealistic/studio renders
   const basicViews = useMemo(() => views.filter((v) => !v.isPhotorealistic && !v.isStudioRender), [views]);
   const photoViews = useMemo(() => views.filter((v) => v.isPhotorealistic), [views]);
@@ -606,7 +603,6 @@ export default function ProjectWorkspacePage() {
             ) : project.modelUrl ? (
               <ModelViewerWrapper
                 modelUrl={project.modelUrl}
-                studioMode={studioMode}
                 onModelLoaded={handleModelLoaded}
                 onReady={handleThreeReady}
               />
@@ -1066,7 +1062,6 @@ export default function ProjectWorkspacePage() {
                 threeRefs={threeRefs}
                 modelScene={modelScene}
                 existingRenders={studioViews}
-                onStudioModeChange={setStudioMode}
               />
 
               {/* Hero reference renders (structured JSON prompting + style reference) */}
