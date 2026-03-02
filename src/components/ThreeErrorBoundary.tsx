@@ -10,6 +10,7 @@ interface Props {
 interface State {
   hasError: boolean;
   errorMessage: string;
+  retryCount: number;
 }
 
 function classifyError(message: string): string {
@@ -32,13 +33,18 @@ function classifyError(message: string): string {
   }
   if (
     lower.includes("parse") ||
-    lower.includes("invalid") ||
     lower.includes("unexpected token") ||
     lower.includes("magic bytes")
   ) {
     return "The file does not appear to be a valid GLB/GLTF model.";
   }
-  if (lower.includes("webgl") || lower.includes("context")) {
+  // Only match actual WebGL context errors, not generic "context" mentions
+  if (
+    lower.includes("webgl") ||
+    lower.includes("getcontext") ||
+    lower.includes("webgl2") ||
+    lower.includes("gpu")
+  ) {
     return "Your browser could not create a WebGL context. Try closing other tabs or restarting your browser.";
   }
   if (lower.includes("memory") || lower.includes("allocation")) {
@@ -47,13 +53,16 @@ function classifyError(message: string): string {
   return "Failed to load the 3D model. Try refreshing the page.";
 }
 
+// Max auto-retries before showing error to user
+const MAX_AUTO_RETRIES = 2;
+
 export default class ThreeErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, errorMessage: "" };
+    this.state = { hasError: false, errorMessage: "", retryCount: 0 };
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return {
       hasError: true,
       errorMessage: error.message || "Failed to load 3D viewer",
@@ -62,10 +71,21 @@ export default class ThreeErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error) {
     console.error("3D viewer error:", error.message);
+
+    // Auto-retry up to MAX_AUTO_RETRIES times with a delay
+    if (this.state.retryCount < MAX_AUTO_RETRIES) {
+      setTimeout(() => {
+        this.setState((prev) => ({
+          hasError: false,
+          errorMessage: "",
+          retryCount: prev.retryCount + 1,
+        }));
+      }, 1000 * (this.state.retryCount + 1)); // 1s, 2s delays
+    }
   }
 
   render() {
-    if (this.state.hasError) {
+    if (this.state.hasError && this.state.retryCount >= MAX_AUTO_RETRIES) {
       if (this.props.fallback) {
         return this.props.fallback;
       }
@@ -97,9 +117,12 @@ export default class ThreeErrorBoundary extends Component<Props, State> {
               3D Viewer Error
             </p>
             <p className="text-xs text-slate-500 mb-4">{userMessage}</p>
+            <p className="text-[10px] text-slate-600 mb-4 max-w-xs mx-auto break-words">
+              {this.state.errorMessage}
+            </p>
             <button
               onClick={() =>
-                this.setState({ hasError: false, errorMessage: "" })
+                this.setState({ hasError: false, errorMessage: "", retryCount: 0 })
               }
               className="btn-secondary px-4 py-2 rounded-xl text-sm"
             >

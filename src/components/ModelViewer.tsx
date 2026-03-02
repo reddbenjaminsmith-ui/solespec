@@ -286,7 +286,12 @@ export default function ModelViewer({
         )}
         {modelScene && (
           <Canvas
-            gl={{ preserveDrawingBuffer: true, antialias: true }}
+            gl={{
+              preserveDrawingBuffer: true,
+              antialias: true,
+              failIfMajorPerformanceCaveat: false,
+              powerPreference: "default",
+            }}
             dpr={[1, 2]}
             camera={{ fov: 50, near: 0.01, far: 1000 }}
             style={{ background: "#12121e" }}
