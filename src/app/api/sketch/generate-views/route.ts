@@ -7,6 +7,8 @@ import { VIEW_CONFIGS, buildPredecessorViewPromptMessages } from "@/lib/ai/sketc
 
 // Intentionally public - no auth check yet. Will be gated behind authentication in a future phase.
 
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const ip = getClientIp(request);
   const limit = rateLimit(`sketch-views:${ip}`, 5, 60000);
@@ -159,9 +161,9 @@ export async function POST(request: Request) {
                 message: `Generating ${config.viewName} view (${i + 1}/${VIEW_CONFIGS.length})...`,
               });
 
-              // Step 2: gpt-image-1.5 generates from the detailed prompt
+              // Step 2: generate image from the detailed prompt
               const response = await openai.images.generate({
-                model: "gpt-image-1.5",
+                model: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
                 prompt: imagePrompt,
                 n: 1,
                 size: "1024x1024",

@@ -33,6 +33,7 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
   const [addingNew, setAddingNew] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState<ComponentCategory>("upper");
+  const [saveError, setSaveError] = useState("");
 
   // Load data
   useEffect(() => {
@@ -59,9 +60,9 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
     load();
   }, [projectId]);
 
-  // Check if all confirmed - enable next
+  // Enable next when components exist (user can confirm individually or proceed)
   useEffect(() => {
-    if (components.length > 0 && components.every((c) => c.confirmed)) {
+    if (components.length > 0) {
       onStepComplete();
     }
   }, [components, onStepComplete]);

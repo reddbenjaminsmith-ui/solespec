@@ -1,44 +1,7 @@
 import { NextResponse } from "next/server";
 import { projectsTable, escapeForFormula } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
-
-// Intentionally public - no auth check yet. Will be gated behind authentication in a future phase.
-
-function isValidUrl(urlString: string): boolean {
-  try {
-    const url = new URL(urlString);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
-    const hostname = url.hostname;
-    if (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "0.0.0.0" ||
-      hostname.startsWith("10.") ||
-      hostname.startsWith("192.168.") ||
-      hostname.startsWith("172.16.") ||
-      hostname.startsWith("172.17.") ||
-      hostname.startsWith("172.18.") ||
-      hostname.startsWith("172.19.") ||
-      hostname.startsWith("172.20.") ||
-      hostname.startsWith("172.21.") ||
-      hostname.startsWith("172.22.") ||
-      hostname.startsWith("172.23.") ||
-      hostname.startsWith("172.24.") ||
-      hostname.startsWith("172.25.") ||
-      hostname.startsWith("172.26.") ||
-      hostname.startsWith("172.27.") ||
-      hostname.startsWith("172.28.") ||
-      hostname.startsWith("172.29.") ||
-      hostname.startsWith("172.30.") ||
-      hostname.startsWith("172.31.")
-    ) {
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { isValidUrl } from "@/lib/validation";
 
 export async function POST(request: Request) {
   const ip = getClientIp(request);
@@ -115,24 +78,35 @@ export async function POST(request: Request) {
     }
 
     // Build Airtable record fields
-    const fields: Record<string, string | number> = {
+    const coreFields: Record<string, string | number> = {
       Name: name.trim(),
       Email: email.trim().toLowerCase(),
       Status: "draft",
       "Wizard Step": 0,
-      "Source Type": resolvedSourceType,
     };
 
     if (resolvedSourceType === "Sketch") {
-      fields["Sketch URL"] = sketchUrl;
-      fields["Predecessor Model URL"] = predecessorModelUrl;
-      // Set the predecessor as the model URL so it can be viewed in the workspace
-      fields["Model URL"] = predecessorModelUrl;
+      coreFields["Source Type"] = resolvedSourceType;
+      coreFields["Sketch URL"] = sketchUrl;
+      coreFields["Predecessor Model URL"] = predecessorModelUrl;
+      coreFields["Model URL"] = predecessorModelUrl;
     } else {
-      fields["Model URL"] = modelUrl;
+      coreFields["Model URL"] = modelUrl;
     }
 
-    const record = await projectsTable.create(fields);
+    // Try creating with Source Type field first; if it doesn't exist in Airtable,
+    // fall back to core fields only (Source Type was added with the sketch workflow)
+    let record;
+    if (resolvedSourceType !== "Sketch") {
+      try {
+        record = await projectsTable.create({ ...coreFields, "Source Type": "3D Model" });
+      } catch {
+        // Source Type field may not exist yet - retry without it
+        record = await projectsTable.create(coreFields);
+      }
+    } else {
+      record = await projectsTable.create(coreFields);
+    }
 
     return NextResponse.json({
       id: record.getId(),
@@ -195,6 +169,7 @@ export async function GET(request: Request) {
       .select({
         filterByFormula: `{Email} = "${escapeForFormula(email.trim().toLowerCase())}"`,
         sort: [{ field: "Name", direction: "desc" }],
+        maxRecords: 100,
       })
       .all();
 

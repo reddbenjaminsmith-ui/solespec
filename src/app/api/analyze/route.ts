@@ -15,8 +15,11 @@ import {
   parseComponentResponse,
   parseMeasurementResponse,
 } from "@/lib/ai/prompts";
+import { isValidUrl } from "@/lib/validation";
 
 // Intentionally public - no auth check yet. Will be gated behind authentication in a future phase.
+
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const ip = getClientIp(request);
@@ -55,6 +58,7 @@ export async function POST(request: Request) {
     const allViewRecords = await renderedViewsTable
       .select({
         filterByFormula: `FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0`,
+        maxRecords: 100,
       })
       .all();
 
@@ -76,10 +80,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const viewUrls = viewsToAnalyze.map((r) => ({
-      viewName: (r.get("View Name") as string) || "",
-      imageUrl: (r.get("Image URL") as string) || "",
-    }));
+    const viewUrls = viewsToAnalyze
+      .map((r) => ({
+        viewName: (r.get("View Name") as string) || "",
+        imageUrl: (r.get("Image URL") as string) || "",
+      }))
+      .filter((v) => v.imageUrl && isValidUrl(v.imageUrl));
 
     // Update project status to analyzing
     await projectsTable.update(projectId, { Status: "analyzing" });

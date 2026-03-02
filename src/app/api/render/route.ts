@@ -11,6 +11,8 @@ import { put } from "@vercel/blob";
 
 // Intentionally public - no auth check yet. Will be gated behind authentication in a future phase.
 
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const ip = getClientIp(request);
   const limit = rateLimit(`render:${ip}`, 5, 60000);
@@ -37,6 +39,7 @@ export async function POST(request: Request) {
     const viewRecords = await renderedViewsTable
       .select({
         filterByFormula: `AND(FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0, {Is Photorealistic} != TRUE())`,
+        maxRecords: 100,
       })
       .all();
 

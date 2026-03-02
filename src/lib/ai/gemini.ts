@@ -14,4 +14,4 @@ export function getGemini(): GoogleGenAI {
   return _gemini;
 }
 
-export const GEMINI_IMAGE_MODEL = "gemini-2.0-flash-exp";
+export const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.0-flash-exp";

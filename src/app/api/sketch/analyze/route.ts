@@ -9,6 +9,8 @@ import {
 
 // Intentionally public - no auth check yet. Will be gated behind authentication in a future phase.
 
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const ip = getClientIp(request);
   const limit = rateLimit(`sketch-analyze:${ip}`, 5, 60000);

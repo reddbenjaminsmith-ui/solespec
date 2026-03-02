@@ -72,15 +72,24 @@ export default function NewProjectPage() {
     setUploading(true);
     setError("");
 
+    // Step 1: Upload .glb to Vercel Blob
+    let blob;
     try {
-      // Step 1: Upload .glb to Vercel Blob
       setUploadStatus("Uploading 3D model...");
-      const blob = await upload(file.name, file, {
+      blob = await upload(file.name, file, {
         access: "public",
         handleUploadUrl: "/api/upload/token",
       });
+    } catch (uploadErr) {
+      console.error("Upload failed:", uploadErr instanceof Error ? uploadErr.message : "Unknown error");
+      setError("Failed to upload 3D model. Check your connection and try again.");
+      setUploading(false);
+      setUploadStatus("");
+      return;
+    }
 
-      // Step 2: Create project in Airtable
+    // Step 2: Create project in Airtable
+    try {
       setUploadStatus("Creating project...");
       const response = await fetch("/api/projects", {
         method: "POST",
@@ -102,10 +111,11 @@ export default function NewProjectPage() {
       // Step 3: Redirect to workspace
       router.push(`/project/${project.id}`);
     } catch (err) {
+      console.error("Project creation failed:", err instanceof Error ? err.message : "Unknown error");
       setError(
         err instanceof Error && err.message !== "Failed to fetch"
           ? err.message
-          : "Something went wrong. Please try again."
+          : "Failed to create project. Please try again."
       );
     } finally {
       setUploading(false);

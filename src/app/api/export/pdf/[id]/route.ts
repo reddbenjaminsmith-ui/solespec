@@ -15,6 +15,8 @@ import TechPackDocument from "@/lib/pdf/TechPackDocument";
 import type { Project, RenderedView, ShoeComponent, Measurement, Specifications, BOMItem } from "@/lib/types";
 import React from "react";
 
+export const maxDuration = 60;
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -62,11 +64,11 @@ export async function GET(
     const formula = `FIND("${escapedId}", ARRAYJOIN({Project})) > 0`;
 
     const [viewRecords, compRecords, measRecords, specRecords, bomRecords] = await Promise.all([
-      renderedViewsTable.select({ filterByFormula: formula }).all(),
-      componentsTable.select({ filterByFormula: formula }).all(),
-      measurementsTable.select({ filterByFormula: formula }).all(),
-      specificationsTable.select({ filterByFormula: formula }).all(),
-      bomItemsTable.select({ filterByFormula: formula, sort: [{ field: "Sort Order", direction: "asc" }] }).all(),
+      renderedViewsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
+      componentsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
+      measurementsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
+      specificationsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
+      bomItemsTable.select({ filterByFormula: formula, sort: [{ field: "Sort Order", direction: "asc" }], maxRecords: 100 }).all(),
     ]);
 
     const views = viewRecords.map((r) => ({
