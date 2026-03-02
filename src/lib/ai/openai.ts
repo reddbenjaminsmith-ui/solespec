@@ -14,5 +14,6 @@ export function getOpenAI(): OpenAI {
   return _openai;
 }
 
-export const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
-export const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+// GPT-5.2 - best vision/reasoning model (released Dec 2025)
+// Used for sketch analysis, component detection, measurement estimation
+export const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.2";

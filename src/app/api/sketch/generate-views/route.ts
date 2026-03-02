@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { projectsTable, renderedViewsTable, isValidRecordId } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
-import { getOpenAI, OPENAI_MODEL, OPENAI_IMAGE_MODEL } from "@/lib/ai/openai";
+import { getOpenAI, OPENAI_MODEL } from "@/lib/ai/openai";
+import { getGemini, GEMINI_IMAGE_MODEL } from "@/lib/ai/gemini";
 import { put } from "@vercel/blob";
 import { VIEW_CONFIGS, buildPredecessorViewPromptMessages } from "@/lib/ai/sketch-prompts";
 
@@ -80,6 +81,7 @@ export async function POST(request: Request) {
 
         try {
           const openai = getOpenAI();
+          const gemini = getGemini();
           const generatedViews: Array<{
             viewName: string;
             imageUrl: string;
@@ -108,9 +110,26 @@ export async function POST(request: Request) {
             recordId: lateralRecord.getId(),
           });
 
+          // Download sketch image once for reuse across all views
+          sendEvent("status", {
+            step: "preparing",
+            message: "Preparing source images...",
+          });
+
+          let sketchBase64: string | null = null;
+          try {
+            const sketchResponse = await fetch(sketchUrl);
+            if (sketchResponse.ok) {
+              const sketchBuffer = await sketchResponse.arrayBuffer();
+              sketchBase64 = Buffer.from(sketchBuffer).toString("base64");
+            }
+          } catch {
+            // Will fall back to text-only prompt if download fails
+          }
+
           // Generate additional views using two-step pipeline:
           // Step 1: GPT-5.2 Vision analyzes sketch + predecessor render to create detailed prompt
-          // Step 2: gpt-image-1.5 generates from that informed prompt
+          // Step 2: Nano Banana Pro generates from that prompt + source images
           for (let i = 0; i < VIEW_CONFIGS.length; i++) {
             const config = VIEW_CONFIGS[i];
 
@@ -148,57 +167,88 @@ export async function POST(request: Request) {
                 imagePrompt = promptCompletion.choices[0]?.message?.content || "";
 
                 if (!imagePrompt || imagePrompt.length < 50) {
-                  // Fallback to basic prompt if GPT-5.2 returned too little
                   imagePrompt = `Technical footwear illustration of a shoe from the ${config.viewName} angle (${config.viewAngle}). Clean lines, white background, show all component boundaries clearly. Maintain proper shoe proportions.`;
                 }
               } else {
-                // No predecessor render available - use basic prompt
                 imagePrompt = `Technical footwear illustration of a shoe from the ${config.viewName} angle (${config.viewAngle}). Clean lines, white background, show all component boundaries clearly. The shoe design features the panel lines and components from the original lateral sketch. Maintain proper shoe proportions.`;
               }
 
               sendEvent("status", {
                 step: `generating_${config.viewName}`,
-                message: `Generating ${config.viewName} view (${i + 1}/${VIEW_CONFIGS.length})...`,
+                message: `Generating ${config.viewName} view with Nano Banana Pro (${i + 1}/${VIEW_CONFIGS.length})...`,
               });
 
-              // Step 2: generate image from the detailed prompt
-              const response = await openai.images.generate({
-                model: OPENAI_IMAGE_MODEL,
-                prompt: imagePrompt,
-                n: 1,
-                size: "1024x1024",
-                quality: "high",
+              // Step 2: Nano Banana Pro generates from prompt + source images
+              // Build content parts: text prompt + sketch image + predecessor render
+              const contentParts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
+                { text: imagePrompt },
+              ];
+
+              // Add sketch image as visual context if available
+              if (sketchBase64) {
+                contentParts.push({
+                  inlineData: { mimeType: "image/png", data: sketchBase64 },
+                });
+              }
+
+              // Add predecessor render as visual context if available
+              if (predecessorView) {
+                try {
+                  const predResponse = await fetch(predecessorView.imageUrl);
+                  if (predResponse.ok) {
+                    const predBuffer = await predResponse.arrayBuffer();
+                    const predBase64 = Buffer.from(predBuffer).toString("base64");
+                    contentParts.push({
+                      inlineData: { mimeType: "image/png", data: predBase64 },
+                    });
+                  }
+                } catch {
+                  // Continue without predecessor image - prompt still has the details
+                }
+              }
+
+              const response = await gemini.models.generateContent({
+                model: GEMINI_IMAGE_MODEL,
+                contents: [
+                  {
+                    role: "user",
+                    parts: contentParts,
+                  },
+                ],
+                config: {
+                  responseModalities: ["IMAGE", "TEXT"],
+                  imageConfig: {
+                    aspectRatio: "1:1",
+                    imageSize: "2K",
+                  },
+                },
               });
 
-              const imageData = response.data?.[0];
-              if (!imageData || (!imageData.url && !imageData.b64_json)) {
+              // Extract generated image from Gemini response
+              let renderedImageData: string | null = null;
+              if (response.candidates && response.candidates[0]?.content?.parts) {
+                for (const part of response.candidates[0].content.parts) {
+                  if (part.inlineData && part.inlineData.data) {
+                    renderedImageData = part.inlineData.data;
+                    break;
+                  }
+                }
+              }
+
+              if (!renderedImageData) {
                 throw new Error(`No image generated for ${config.viewName} view`);
               }
 
-              // If we got base64, upload to Vercel Blob
-              let imageUrl: string;
-              if (imageData.b64_json) {
-                const buffer = Buffer.from(imageData.b64_json, "base64");
-                const blob = await put(
-                  `sketch-views/${projectId}/${config.viewName}.png`,
-                  buffer,
-                  { access: "public", contentType: "image/png" }
-                );
-                imageUrl = blob.url;
-              } else {
-                // Download and re-upload to Vercel Blob for persistence
-                const imgResponse = await fetch(imageData.url!);
-                const imgBuffer = Buffer.from(await imgResponse.arrayBuffer());
-                const blob = await put(
-                  `sketch-views/${projectId}/${config.viewName}.png`,
-                  imgBuffer,
-                  { access: "public", contentType: "image/png" }
-                );
-                imageUrl = blob.url;
-              }
+              // Upload to Vercel Blob
+              const buffer = Buffer.from(renderedImageData, "base64");
+              const blob = await put(
+                `sketch-views/${projectId}/${config.viewName}.png`,
+                buffer,
+                { access: "public", contentType: "image/png" }
+              );
+              const imageUrl = blob.url;
 
               // Save to Airtable
-              // Map view names to match existing convention
               const airtableViewName =
                 config.viewName === "medial"
                   ? "left"

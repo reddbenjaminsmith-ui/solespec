@@ -14,4 +14,7 @@ export function getGemini(): GoogleGenAI {
   return _gemini;
 }
 
-export const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.0-flash-exp";
+// Nano Banana Pro - best image generation model (Gemini 3 Pro Image)
+// Higher quality, more photorealistic, better prompt adherence than GPT Image 1.5
+// Supports up to 4K output, image-to-image editing, and multi-image input
+export const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image-preview";
