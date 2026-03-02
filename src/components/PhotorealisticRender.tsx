@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useSSEStream } from "@/lib/useSSEStream";
 
 interface RenderView {
@@ -20,6 +20,7 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
   const [renderedViews, setRenderedViews] = useState<RenderView[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
   const [failedCount, setFailedCount] = useState(0);
+  const errorRef = useRef(false);
   const { start, isStreaming } = useSSEStream();
 
   const handleStart = useCallback(() => {
@@ -27,6 +28,7 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
     setRenderedViews([]);
     setFailedCount(0);
     setProgress({ current: 0, total: 7, viewName: "" });
+    errorRef.current = false;
 
     start("/api/render", { projectId }, {
       onEvent: (event, data) => {
@@ -49,6 +51,7 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
             setFailedCount((prev) => prev + 1);
             break;
           case "complete": {
+            if (errorRef.current) break;
             const views = (d.views as RenderView[]) || [];
             setRenderedViews(views);
             setPhase("complete");
@@ -56,6 +59,7 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
             break;
           }
           case "error":
+            errorRef.current = true;
             setErrorMsg((d.message as string) || "Rendering failed");
             setPhase("error");
             break;
@@ -66,10 +70,10 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
         setPhase("error");
       },
       onDone: () => {
-        if (phase !== "error") setPhase("complete");
+        if (!errorRef.current) setPhase("complete");
       },
     });
-  }, [projectId, start, onComplete, phase]);
+  }, [projectId, start, onComplete]);
 
   const VIEW_LABELS: Record<string, string> = {
     front: "Front",
@@ -180,7 +184,9 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
           </div>
           <p className="text-sm text-amber-400 mb-1">All renders failed</p>
           <p className="text-xs text-slate-500 mb-4">
-            {failedCount} view{failedCount !== 1 ? "s" : ""} failed to generate. This can happen when the AI service is busy.
+            {failedCount > 0
+              ? `${failedCount} view${failedCount !== 1 ? "s" : ""} failed to generate. This can happen when the AI service is busy.`
+              : "No views could be generated. The AI service may be temporarily unavailable."}
           </p>
           <button onClick={handleStart} className="btn-secondary px-4 py-2 rounded-xl text-sm">
             Retry

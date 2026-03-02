@@ -64,6 +64,7 @@ export async function POST(request: Request) {
         };
 
         const renderedViews: Array<{ viewName: string; imageUrl: string; id: string }> = [];
+        let errorSent = false;
 
         for (let i = 0; i < views.length; i++) {
           const view = views[i];
@@ -169,6 +170,7 @@ export async function POST(request: Request) {
             // Detect quota/billing errors - stop early, no point retrying other views
             const isQuotaError = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota");
             if (isQuotaError) {
+              errorSent = true;
               sendEvent("error", {
                 message: "Gemini API quota exceeded. Enable billing at ai.google.dev to use image generation.",
               });
@@ -182,11 +184,13 @@ export async function POST(request: Request) {
           }
         }
 
-        sendEvent("complete", {
-          renderedCount: renderedViews.length,
-          totalViews: views.length,
-          views: renderedViews,
-        });
+        if (!errorSent) {
+          sendEvent("complete", {
+            renderedCount: renderedViews.length,
+            totalViews: views.length,
+            views: renderedViews,
+          });
+        }
 
         controller.close();
       },
