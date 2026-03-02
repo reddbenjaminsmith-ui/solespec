@@ -87,150 +87,128 @@ export async function POST(request: Request) {
           });
         }
 
-        for (let i = 0; i < views.length; i++) {
-          const view = views[i];
-          sendEvent("progress", {
-            current: i + 1,
-            total: views.length,
-            viewName: view.viewName,
-            message: `Rendering ${view.viewName} view...`,
+        // Render a single view end-to-end
+        async function renderView(view: { viewName: string; imageUrl: string }) {
+          // Download the original image
+          const imageResponse = await fetch(view.imageUrl);
+          if (!imageResponse.ok) {
+            return { viewName: view.viewName, error: "Failed to download original image" };
+          }
+          const imageBuffer = await imageResponse.arrayBuffer();
+          const base64Image = Buffer.from(imageBuffer).toString("base64");
+
+          // Try active model, fallback on overload (503)
+          let response;
+          try {
+            response = await callGemini(activeModel, base64Image);
+          } catch (primaryErr) {
+            const msg = primaryErr instanceof Error ? primaryErr.message : "";
+            const isOverload = msg.includes("503") || msg.includes("high demand") || msg.includes("overloaded");
+            if (isOverload && activeModel !== GEMINI_IMAGE_FALLBACK) {
+              activeModel = GEMINI_IMAGE_FALLBACK;
+              response = await callGemini(activeModel, base64Image);
+            } else {
+              throw primaryErr;
+            }
+          }
+
+          // Extract the generated image
+          let renderedImageData: string | null = null;
+          if (response.candidates && response.candidates[0]?.content?.parts) {
+            for (const part of response.candidates[0].content.parts) {
+              if (part.inlineData && part.inlineData.data) {
+                renderedImageData = part.inlineData.data;
+                break;
+              }
+            }
+          }
+
+          if (!renderedImageData) {
+            return { viewName: view.viewName, error: "No image generated for this view" };
+          }
+
+          // Upload rendered image to Vercel Blob
+          const renderedBuffer = Buffer.from(renderedImageData, "base64");
+          const blob = await put(
+            `renders/${projectId}/${view.viewName}.png`,
+            renderedBuffer,
+            { access: "public", contentType: "image/png", addRandomSuffix: true }
+          );
+
+          // Save to Airtable
+          const record = await renderedViewsTable.create({
+            "View Name": view.viewName,
+            "Image URL": blob.url,
+            Project: [projectId],
+            "Is Photorealistic": true,
           });
 
-          try {
-            // Download the original image
-            const imageResponse = await fetch(view.imageUrl);
-            if (!imageResponse.ok) {
-              sendEvent("viewError", {
-                viewName: view.viewName,
-                message: "Failed to download original image",
-              });
-              continue;
-            }
-            const imageBuffer = await imageResponse.arrayBuffer();
-            const base64Image = Buffer.from(imageBuffer).toString("base64");
+          return { viewName: view.viewName, imageUrl: blob.url, id: record.getId() };
+        }
 
-            // Try active model, fallback on overload (503)
-            let response;
-            try {
-              response = await callGemini(activeModel, base64Image);
-            } catch (primaryErr) {
-              const msg = primaryErr instanceof Error ? primaryErr.message : "";
-              const isOverload = msg.includes("503") || msg.includes("high demand") || msg.includes("overloaded");
-              if (isOverload && activeModel !== GEMINI_IMAGE_FALLBACK) {
-                console.error(`${activeModel} overloaded, falling back to ${GEMINI_IMAGE_FALLBACK}`);
-                activeModel = GEMINI_IMAGE_FALLBACK;
-                sendEvent("progress", {
-                  current: i + 1,
-                  total: views.length,
-                  viewName: view.viewName,
-                  message: `Primary model busy, retrying with fallback...`,
-                });
-                response = await callGemini(activeModel, base64Image);
+        // Process views in parallel batches of 3
+        const BATCH_SIZE = 3;
+        for (let batchStart = 0; batchStart < views.length; batchStart += BATCH_SIZE) {
+          if (errorSent) break;
+
+          const batch = views.slice(batchStart, batchStart + BATCH_SIZE);
+          sendEvent("progress", {
+            current: batchStart + 1,
+            total: views.length,
+            viewName: batch.map((v) => v.viewName).join(", "),
+            message: `Rendering ${batch.length} views...`,
+          });
+
+          const results = await Promise.allSettled(batch.map((v) => renderView(v)));
+
+          for (let j = 0; j < results.length; j++) {
+            const result = results[j];
+            const view = batch[j];
+
+            if (result.status === "fulfilled") {
+              const val = result.value;
+              if ("error" in val) {
+                sendEvent("viewError", { viewName: val.viewName, message: val.error });
               } else {
-                throw primaryErr;
+                renderedViews.push(val);
+                sendEvent("viewComplete", { viewName: val.viewName, imageUrl: val.imageUrl });
+              }
+            } else {
+              // Rejected - check for fatal errors
+              const errMsg = result.reason instanceof Error ? result.reason.message : "Unknown error";
+              console.error(`Render ${view.viewName} failed:`, errMsg);
+
+              const isQuotaError = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota");
+              const isOverload = errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("overloaded");
+              const isAuthError = errMsg.includes("403") || errMsg.includes("401") || errMsg.includes("PERMISSION_DENIED") || errMsg.includes("API_KEY");
+              const isModelError = errMsg.includes("404") || errMsg.includes("not found") || errMsg.includes("NOT_FOUND");
+
+              if (isQuotaError) {
+                errorSent = true;
+                sendEvent("error", { message: "Gemini API quota exceeded. Enable billing at ai.google.dev to use image generation." });
+              } else if (isOverload) {
+                errorSent = true;
+                sendEvent("error", { message: "Gemini image generation is experiencing high demand. Please try again in a few minutes." });
+              } else if (isAuthError) {
+                errorSent = true;
+                sendEvent("error", { message: "Gemini API key is invalid or lacks permission for image generation. Check your API key at ai.google.dev." });
+              } else if (isModelError) {
+                errorSent = true;
+                sendEvent("error", { message: `Gemini model "${activeModel}" not found. It may not be available for your account.` });
+              } else {
+                const safeMsg = errMsg.length > 120 ? errMsg.slice(0, 120) + "..." : errMsg;
+                sendEvent("viewError", { viewName: view.viewName, message: `Render failed: ${safeMsg}` });
               }
             }
-
-            // Extract the generated image from response
-            let renderedImageData: string | null = null;
-            if (response.candidates && response.candidates[0]?.content?.parts) {
-              for (const part of response.candidates[0].content.parts) {
-                if (part.inlineData && part.inlineData.data) {
-                  renderedImageData = part.inlineData.data;
-                  break;
-                }
-              }
-            }
-
-            if (!renderedImageData) {
-              sendEvent("viewError", {
-                viewName: view.viewName,
-                message: "No image generated for this view",
-              });
-              continue;
-            }
-
-            // Upload rendered image to Vercel Blob
-            const renderedBuffer = Buffer.from(renderedImageData, "base64");
-            const blob = await put(
-              `renders/${projectId}/${view.viewName}.png`,
-              renderedBuffer,
-              {
-                access: "public",
-                contentType: "image/png",
-                addRandomSuffix: true,
-              }
-            );
-
-            // Save to Airtable as a photorealistic view
-            const record = await renderedViewsTable.create({
-              "View Name": view.viewName,
-              "Image URL": blob.url,
-              Project: [projectId],
-              "Is Photorealistic": true,
-            });
-
-            renderedViews.push({
-              viewName: view.viewName,
-              imageUrl: blob.url,
-              id: record.getId(),
-            });
-
-            sendEvent("viewComplete", {
-              viewName: view.viewName,
-              imageUrl: blob.url,
-            });
-          } catch (viewError) {
-            const errMsg = viewError instanceof Error ? viewError.message : "Unknown error";
-            console.error(`Render ${view.viewName} failed:`, errMsg);
-
-            // Detect quota/billing errors - stop early
-            const isQuotaError = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota");
-            if (isQuotaError) {
-              errorSent = true;
-              sendEvent("error", {
-                message: "Gemini API quota exceeded. Enable billing at ai.google.dev to use image generation.",
-              });
-              break;
-            }
-
-            // Detect overload on fallback too - stop early
-            const isOverload = errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("overloaded");
-            if (isOverload) {
-              errorSent = true;
-              sendEvent("error", {
-                message: "Gemini image generation is experiencing high demand. Please try again in a few minutes.",
-              });
-              break;
-            }
-
-            // Detect auth/permission errors - stop early
-            const isAuthError = errMsg.includes("403") || errMsg.includes("401") || errMsg.includes("PERMISSION_DENIED") || errMsg.includes("API_KEY");
-            if (isAuthError) {
-              errorSent = true;
-              sendEvent("error", {
-                message: "Gemini API key is invalid or lacks permission for image generation. Check your API key at ai.google.dev.",
-              });
-              break;
-            }
-
-            // Detect model not found
-            const isModelError = errMsg.includes("404") || errMsg.includes("not found") || errMsg.includes("NOT_FOUND");
-            if (isModelError) {
-              errorSent = true;
-              sendEvent("error", {
-                message: `Gemini model "${activeModel}" not found. It may not be available for your account.`,
-              });
-              break;
-            }
-
-            // For other errors, include a safe summary
-            const safeMsg = errMsg.length > 120 ? errMsg.slice(0, 120) + "..." : errMsg;
-            sendEvent("viewError", {
-              viewName: view.viewName,
-              message: `Render failed: ${safeMsg}`,
-            });
           }
+
+          // Send batch progress update
+          sendEvent("progress", {
+            current: Math.min(batchStart + BATCH_SIZE, views.length),
+            total: views.length,
+            viewName: "",
+            message: `${renderedViews.length} of ${views.length} views rendered`,
+          });
         }
 
         if (!errorSent) {
