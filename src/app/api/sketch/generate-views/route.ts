@@ -161,7 +161,7 @@ export async function POST(request: Request) {
                   model: OPENAI_MODEL,
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   messages: promptMessages as any,
-                  max_tokens: 1024,
+                  max_completion_tokens: 1024,
                 });
 
                 imagePrompt = promptCompletion.choices[0]?.message?.content || "";

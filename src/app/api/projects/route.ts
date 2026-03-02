@@ -181,7 +181,7 @@ export async function GET(request: Request) {
       modelUrl: record.get("Model URL") || "",
       thumbnailUrl: record.get("Thumbnail URL") || "",
       wizardStep: record.get("Wizard Step") || 0,
-      createdAt: record.get("Created") || "",
+      createdAt: record.get("Created") || new Date().toISOString(),
       sourceType: record.get("Source Type") || "3D Model",
       sketchUrl: record.get("Sketch URL") || "",
       predecessorModelUrl: record.get("Predecessor Model URL") || "",
