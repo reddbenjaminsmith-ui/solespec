@@ -105,7 +105,11 @@ export async function POST(request: Request) {
                 },
               ],
               config: {
-                responseModalities: ["TEXT", "IMAGE"],
+                responseModalities: ["IMAGE", "TEXT"],
+                imageConfig: {
+                  aspectRatio: "1:1",
+                  imageSize: "2K",
+                },
               },
             });
 

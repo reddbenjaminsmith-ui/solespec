@@ -19,11 +19,13 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
   const [progress, setProgress] = useState({ current: 0, total: 7, viewName: "" });
   const [renderedViews, setRenderedViews] = useState<RenderView[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
+  const [failedCount, setFailedCount] = useState(0);
   const { start, isStreaming } = useSSEStream();
 
   const handleStart = useCallback(() => {
     setPhase("streaming");
     setRenderedViews([]);
+    setFailedCount(0);
     setProgress({ current: 0, total: 7, viewName: "" });
 
     start("/api/render", { projectId }, {
@@ -44,7 +46,7 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
             ]);
             break;
           case "viewError":
-            // Individual view failed - keep going
+            setFailedCount((prev) => prev + 1);
             break;
           case "complete": {
             const views = (d.views as RenderView[]) || [];
@@ -127,6 +129,11 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
               style={{ width: `${pct}%` }}
             />
           </div>
+          {failedCount > 0 && (
+            <p className="text-xs text-amber-400 mt-1" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              {failedCount} view{failedCount !== 1 ? "s" : ""} failed
+            </p>
+          )}
         </div>
         {/* Show rendered images as they arrive */}
         {renderedViews.length > 0 && (
@@ -161,7 +168,29 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
     );
   }
 
-  // Complete
+  // Complete - all views failed
+  if (renderedViews.length === 0) {
+    return (
+      <div className="glass-card-static p-6 rounded-xl">
+        <div className="text-center">
+          <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-amber-500/10 flex items-center justify-center">
+            <svg className="w-6 h-6 text-amber-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            </svg>
+          </div>
+          <p className="text-sm text-amber-400 mb-1">All renders failed</p>
+          <p className="text-xs text-slate-500 mb-4">
+            {failedCount} view{failedCount !== 1 ? "s" : ""} failed to generate. This can happen when the AI service is busy.
+          </p>
+          <button onClick={handleStart} className="btn-secondary px-4 py-2 rounded-xl text-sm">
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Complete - with results
   return (
     <div className="glass-card-static p-4 rounded-xl">
       <div className="flex items-center justify-between mb-3">
@@ -171,6 +200,14 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
         >
           {renderedViews.length} renders complete
         </span>
+        {failedCount > 0 && (
+          <span
+            className="text-xs text-amber-400"
+            style={{ fontFamily: "'JetBrains Mono', monospace" }}
+          >
+            {failedCount} failed
+          </span>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-2">
         {renderedViews.map((view) => (
@@ -189,6 +226,13 @@ export default function PhotorealisticRender({ projectId, onComplete }: Photorea
           </div>
         ))}
       </div>
+      {failedCount > 0 && (
+        <div className="mt-3 flex justify-center">
+          <button onClick={handleStart} className="text-xs text-cyan-400 hover:text-cyan-300 underline">
+            Re-render all views
+          </button>
+        </div>
+      )}
     </div>
   );
 }
