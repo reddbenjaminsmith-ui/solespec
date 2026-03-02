@@ -272,7 +272,7 @@ export async function POST(request: Request) {
             // Best effort status reset
           }
 
-          // Surface a specific but safe error message
+          // Surface error details for debugging (no secrets in errMsg/errStatus/errCode)
           let clientMessage = "AI analysis failed. Please try again.";
           if (errCode === "ETIMEDOUT" || errCode === "ECONNABORTED" || errMsg.includes("timeout")) {
             clientMessage = "Analysis timed out. Try again.";
@@ -286,8 +286,11 @@ export async function POST(request: Request) {
             clientMessage = "AI provider is temporarily unavailable. Try again in a moment.";
           }
 
+          // Include debug info to diagnose production failures
+          const debugInfo = `[${errStatus || "no-status"}/${errCode || "no-code"}] ${errMsg.substring(0, 200)}`;
+
           sendEvent("error", {
-            message: clientMessage,
+            message: `${clientMessage} Debug: ${debugInfo}`,
           });
         }
 
