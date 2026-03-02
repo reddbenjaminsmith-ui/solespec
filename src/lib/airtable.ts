@@ -17,6 +17,9 @@ export const componentsTable = base("Components");
 export const measurementsTable = base("Measurements");
 export const specificationsTable = base("Specifications");
 export const bomItemsTable = base("BOM Items");
+export const crossSectionsTable = base("Cross Sections");
+export const annotationsTable = base("Annotations");
+export const stitchCalloutsTable = base("Stitch Callouts");
 
 // Escape a string for use in Airtable formulas (prevent injection)
 export function escapeForFormula(value: string): string {

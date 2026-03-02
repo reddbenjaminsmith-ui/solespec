@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import type { ShoeComponent, RenderedView } from "@/lib/types";
+import type { ShoeComponent, RenderedView, Annotation, StitchCallout } from "@/lib/types";
 import type { TechnicalView, ComponentCategory } from "@/lib/constants";
 import { COMPONENT_CATEGORIES } from "@/lib/constants";
 import { CAMERA_POSITIONS } from "@/lib/three/camera-positions";
 import AnnotatedView from "./AnnotatedView";
+import AnnotationOverlay from "./AnnotationOverlay";
+import StitchOverlay from "./StitchOverlay";
+
+type ActiveMode = "components" | "annotations" | "stitching";
 
 interface ComponentReviewProps {
   projectId: string;
@@ -21,6 +25,7 @@ const CATEGORY_STYLES: Record<string, { bg: string; text: string }> = {
 };
 
 export default function ComponentReview({ projectId, onStepComplete }: ComponentReviewProps) {
+  // Component state (existing)
   const [components, setComponents] = useState<ShoeComponent[]>([]);
   const [views, setViews] = useState<RenderedView[]>([]);
   const [selectedView, setSelectedView] = useState<TechnicalView>("three_quarter");
@@ -35,13 +40,30 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
   const [newCategory, setNewCategory] = useState<ComponentCategory>("upper");
   const [saveError, setSaveError] = useState("");
 
+  // Tab mode
+  const [activeMode, setActiveMode] = useState<ActiveMode>("components");
+
+  // Annotation state
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [annotationEditing, setAnnotationEditing] = useState(false);
+  const [savingAnnotations, setSavingAnnotations] = useState(false);
+
+  // Stitch callout state
+  const [stitchCallouts, setStitchCallouts] = useState<StitchCallout[]>([]);
+  const [selectedStitchId, setSelectedStitchId] = useState<string | null>(null);
+  const [stitchEditing, setStitchEditing] = useState(false);
+  const [savingStitches, setSavingStitches] = useState(false);
+
   // Load data
   useEffect(() => {
     async function load() {
       try {
-        const [compRes, viewsRes] = await Promise.all([
+        const [compRes, viewsRes, annRes, stitchRes] = await Promise.all([
           fetch(`/api/components?projectId=${projectId}`),
           fetch(`/api/views?projectId=${projectId}`),
+          fetch(`/api/annotations?projectId=${projectId}`),
+          fetch(`/api/stitch-callouts?projectId=${projectId}`),
         ]);
         if (compRes.ok) {
           const data = await compRes.json();
@@ -50,6 +72,14 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
         if (viewsRes.ok) {
           const data = await viewsRes.json();
           setViews(data.views || []);
+        }
+        if (annRes.ok) {
+          const data = await annRes.json();
+          setAnnotations(data.items || []);
+        }
+        if (stitchRes.ok) {
+          const data = await stitchRes.json();
+          setStitchCallouts(data.items || []);
         }
       } catch {
         // Will show empty state
@@ -60,7 +90,7 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
     load();
   }, [projectId]);
 
-  // Enable next when components exist (user can confirm individually or proceed)
+  // Enable next when components exist
   useEffect(() => {
     if (components.length > 0) {
       onStepComplete();
@@ -69,6 +99,10 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
 
   const currentViewImage = views.find((v) => v.viewName === selectedView);
   const viewComponents = components.filter((c) => c.bestView === selectedView);
+  const viewAnnotations = annotations.filter((a) => a.viewName === selectedView);
+  const viewStitchCallouts = stitchCallouts.filter((s) => s.viewName === selectedView);
+
+  // --- Component handlers (unchanged) ---
 
   const handleConfirm = useCallback(async (id: string) => {
     setSaveError("");
@@ -150,7 +184,6 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
         }),
       });
       if (res.ok) {
-        // Refetch to get the new record with its ID
         const compRes = await fetch(`/api/components?projectId=${projectId}`);
         if (compRes.ok) {
           const data = await compRes.json();
@@ -183,6 +216,179 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
     setSaving(false);
   }, [components]);
 
+  // --- Annotation handlers ---
+
+  const handleAddAnnotation = useCallback(
+    (startX: number, startY: number, endX: number, endY: number) => {
+      const newAnn: Annotation = {
+        id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        projectId,
+        viewName: selectedView,
+        arrowStartX: startX,
+        arrowStartY: startY,
+        arrowEndX: endX,
+        arrowEndY: endY,
+        text: "",
+        sortOrder: annotations.length,
+      };
+      setAnnotations((prev) => [...prev, newAnn]);
+      setSelectedAnnotationId(newAnn.id);
+    },
+    [projectId, selectedView, annotations.length]
+  );
+
+  const handleRemoveAnnotation = useCallback(
+    (id: string) => {
+      setAnnotations((prev) => prev.filter((a) => a.id !== id));
+      if (selectedAnnotationId === id) setSelectedAnnotationId(null);
+    },
+    [selectedAnnotationId]
+  );
+
+  const handleUpdateAnnotationText = useCallback((id: string, text: string) => {
+    setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, text } : a)));
+  }, []);
+
+  const handleSaveAnnotations = useCallback(async () => {
+    // Filter out annotations with empty text
+    const valid = annotations.filter((a) => a.text.trim().length > 0);
+    if (valid.length === 0 && annotations.length > 0) {
+      setSaveError("All annotations need text before saving.");
+      return;
+    }
+
+    setSavingAnnotations(true);
+    setSaveError("");
+    try {
+      // Delete all existing (non-temp) records
+      const existing = annotations.filter((a) => !a.id.startsWith("temp-"));
+      for (const ann of existing) {
+        await fetch("/api/annotations", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: ann.id }),
+        });
+      }
+
+      // Create all valid items
+      if (valid.length > 0) {
+        await fetch("/api/annotations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            items: valid.map((a, i) => ({
+              viewName: a.viewName,
+              arrowStartX: a.arrowStartX,
+              arrowStartY: a.arrowStartY,
+              arrowEndX: a.arrowEndX,
+              arrowEndY: a.arrowEndY,
+              text: a.text.trim(),
+              sortOrder: i,
+            })),
+          }),
+        });
+      }
+
+      // Re-fetch to get real IDs
+      const res = await fetch(`/api/annotations?projectId=${projectId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setAnnotations(data.items || []);
+      }
+    } catch {
+      setSaveError("Failed to save annotations. Please try again.");
+    } finally {
+      setSavingAnnotations(false);
+    }
+  }, [annotations, projectId]);
+
+  // --- Stitch callout handlers ---
+
+  const handleAddStitchCallout = useCallback(
+    (x: number, y: number) => {
+      const newCallout: StitchCallout = {
+        id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        projectId,
+        viewName: selectedView,
+        positionX: x,
+        positionY: y,
+        spi: 8,
+        threadType: "polyester",
+        stitchPattern: "lockstitch",
+        threadColor: "",
+        notes: "",
+        sortOrder: stitchCallouts.length,
+      };
+      setStitchCallouts((prev) => [...prev, newCallout]);
+      setSelectedStitchId(newCallout.id);
+    },
+    [projectId, selectedView, stitchCallouts.length]
+  );
+
+  const handleRemoveStitchCallout = useCallback(
+    (id: string) => {
+      setStitchCallouts((prev) => prev.filter((s) => s.id !== id));
+      if (selectedStitchId === id) setSelectedStitchId(null);
+    },
+    [selectedStitchId]
+  );
+
+  const handleUpdateStitchCallout = useCallback((id: string, updates: Partial<StitchCallout>) => {
+    setStitchCallouts((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
+  }, []);
+
+  const handleSaveStitchCallouts = useCallback(async () => {
+    setSavingStitches(true);
+    setSaveError("");
+    try {
+      // Delete all existing (non-temp) records
+      const existing = stitchCallouts.filter((s) => !s.id.startsWith("temp-"));
+      for (const sc of existing) {
+        await fetch("/api/stitch-callouts", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: sc.id }),
+        });
+      }
+
+      // Create all current items
+      if (stitchCallouts.length > 0) {
+        await fetch("/api/stitch-callouts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            items: stitchCallouts.map((s, i) => ({
+              viewName: s.viewName,
+              positionX: s.positionX,
+              positionY: s.positionY,
+              spi: s.spi,
+              threadType: s.threadType,
+              stitchPattern: s.stitchPattern,
+              threadColor: s.threadColor || "",
+              notes: s.notes || "",
+              sortOrder: i,
+            })),
+          }),
+        });
+      }
+
+      // Re-fetch to get real IDs
+      const res = await fetch(`/api/stitch-callouts?projectId=${projectId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setStitchCallouts(data.items || []);
+      }
+    } catch {
+      setSaveError("Failed to save stitch details. Please try again.");
+    } finally {
+      setSavingStitches(false);
+    }
+  }, [stitchCallouts, projectId]);
+
+  // --- Render ---
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -208,6 +414,7 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
           {saveError}
         </div>
       )}
+
       {/* View selector */}
       <div className="flex gap-2 overflow-x-auto pb-2">
         {views.map((view) => {
@@ -236,200 +443,418 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
         })}
       </div>
 
-      {/* Annotated view */}
-      {currentViewImage && (
-        <AnnotatedView
-          imageUrl={currentViewImage.imageUrl}
-          components={viewComponents}
-          selectedComponentId={selectedComponentId}
-          onComponentSelect={setSelectedComponentId}
-        />
-      )}
+      {/* Mode tabs */}
+      <div className="flex gap-1 p-1 bg-white/[0.03] rounded-lg border border-white/[0.04]">
+        {(["components", "annotations", "stitching"] as ActiveMode[]).map((mode) => {
+          const isActive = activeMode === mode;
+          const labels: Record<ActiveMode, string> = {
+            components: "Components",
+            annotations: "Annotations",
+            stitching: "Stitching",
+          };
+          const counts: Record<ActiveMode, number> = {
+            components: components.length,
+            annotations: viewAnnotations.length,
+            stitching: viewStitchCallouts.length,
+          };
+          return (
+            <button
+              key={mode}
+              onClick={() => setActiveMode(mode)}
+              className={`
+                flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200
+                ${isActive
+                  ? mode === "annotations"
+                    ? "bg-cyan-500/15 text-cyan-400"
+                    : mode === "stitching"
+                    ? "bg-amber-500/15 text-amber-400"
+                    : "bg-white/[0.08] text-white"
+                  : "text-slate-500 hover:text-slate-300"
+                }
+              `}
+              style={{ fontFamily: "'JetBrains Mono', monospace" }}
+            >
+              {labels[mode]}
+              {counts[mode] > 0 && (
+                <span className="ml-1.5 text-[10px] opacity-60">{counts[mode]}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Component list */}
-      <div className="glass-card-static rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3
-            className="text-sm font-semibold text-white"
-            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-          >
-            Components
-          </h3>
-          <span className="text-xs text-slate-500" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-            {confirmedCount}/{components.length} confirmed
-          </span>
-        </div>
+      {/* ====== COMPONENTS TAB ====== */}
+      {activeMode === "components" && (
+        <>
+          {currentViewImage && (
+            <AnnotatedView
+              imageUrl={currentViewImage.imageUrl}
+              components={viewComponents}
+              selectedComponentId={selectedComponentId}
+              onComponentSelect={setSelectedComponentId}
+            />
+          )}
 
-        <div className="space-y-2 max-h-[300px] overflow-y-auto">
-          {components.map((comp) => {
-            const style = CATEGORY_STYLES[comp.category] || CATEGORY_STYLES.other;
-            const isEditing = editingId === comp.id;
-            const isSelected = selectedComponentId === comp.id;
-
-            return (
-              <div
-                key={comp.id}
-                onClick={() => setSelectedComponentId(comp.id)}
-                className={`
-                  flex items-center gap-3 p-2.5 rounded-lg border transition-all duration-200 cursor-pointer
-                  ${isSelected ? "border-cyan-400/30 bg-cyan-400/[0.04]" : "border-white/[0.04] hover:border-white/[0.08]"}
-                  ${comp.confirmed ? "opacity-100" : "opacity-80"}
-                `}
+          <div className="glass-card-static rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3
+                className="text-sm font-semibold text-white"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
               >
-                {isEditing ? (
-                  <>
-                    <input
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      className="input-field flex-1 text-sm py-1"
-                      autoFocus
-                      onKeyDown={(e) => e.key === "Enter" && saveEdit()}
-                    />
-                    <select
-                      value={editCategory}
-                      onChange={(e) => setEditCategory(e.target.value as ComponentCategory)}
-                      className="input-field w-24 text-xs py-1"
-                    >
-                      {Object.keys(COMPONENT_CATEGORIES).map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                    <button onClick={saveEdit} className="text-emerald-400 hover:text-emerald-300 p-1">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                      </svg>
-                    </button>
-                    <button onClick={() => setEditingId(null)} className="text-slate-500 hover:text-slate-300 p-1">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {/* Confirmed indicator */}
-                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${comp.confirmed ? "bg-emerald-400" : "bg-amber-400"}`} />
+                Components
+              </h3>
+              <span className="text-xs text-slate-500" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                {confirmedCount}/{components.length} confirmed
+              </span>
+            </div>
 
-                    {/* Name */}
-                    <span className="text-sm text-white flex-1 truncate">{comp.name}</span>
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              {components.map((comp) => {
+                const style = CATEGORY_STYLES[comp.category] || CATEGORY_STYLES.other;
+                const isEditing = editingId === comp.id;
+                const isSelected = selectedComponentId === comp.id;
 
-                    {/* Category badge */}
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${style.bg} ${style.text}`} style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                      {comp.category}
-                    </span>
-
-                    {/* Confidence bar */}
-                    <div className="w-12 h-1.5 bg-white/[0.06] rounded-full overflow-hidden flex-shrink-0">
-                      <div
-                        className={`h-full rounded-full ${
-                          comp.aiConfidence > 0.8 ? "bg-emerald-400" : comp.aiConfidence > 0.5 ? "bg-amber-400" : "bg-red-400"
-                        }`}
-                        style={{ width: `${comp.aiConfidence * 100}%` }}
-                      />
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {!comp.confirmed && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleConfirm(comp.id); }}
-                          className="text-emerald-400/60 hover:text-emerald-400 p-1"
-                          title="Confirm"
+                return (
+                  <div
+                    key={comp.id}
+                    onClick={() => setSelectedComponentId(comp.id)}
+                    className={`
+                      flex items-center gap-3 p-2.5 rounded-lg border transition-all duration-200 cursor-pointer
+                      ${isSelected ? "border-cyan-400/30 bg-cyan-400/[0.04]" : "border-white/[0.04] hover:border-white/[0.08]"}
+                      ${comp.confirmed ? "opacity-100" : "opacity-80"}
+                    `}
+                  >
+                    {isEditing ? (
+                      <>
+                        <input
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          className="input-field flex-1 text-sm py-1"
+                          autoFocus
+                          onKeyDown={(e) => e.key === "Enter" && saveEdit()}
+                        />
+                        <select
+                          value={editCategory}
+                          onChange={(e) => setEditCategory(e.target.value as ComponentCategory)}
+                          className="input-field w-24 text-xs py-1"
                         >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                          {Object.keys(COMPONENT_CATEGORIES).map((cat) => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                        <button onClick={saveEdit} className="text-emerald-400 hover:text-emerald-300 p-1">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
                           </svg>
                         </button>
-                      )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); startEdit(comp); }}
-                        className="text-slate-500 hover:text-slate-300 p-1"
-                        title="Edit"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(comp.id); }}
-                        className="text-red-400/40 hover:text-red-400 p-1"
-                        title="Remove"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                        </svg>
-                      </button>
-                    </div>
+                        <button onClick={() => setEditingId(null)} className="text-slate-500 hover:text-slate-300 p-1">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${comp.confirmed ? "bg-emerald-400" : "bg-amber-400"}`} />
+                        <span className="text-sm text-white flex-1 truncate">{comp.name}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${style.bg} ${style.text}`} style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                          {comp.category}
+                        </span>
+                        <div className="w-12 h-1.5 bg-white/[0.06] rounded-full overflow-hidden flex-shrink-0">
+                          <div
+                            className={`h-full rounded-full ${
+                              comp.aiConfidence > 0.8 ? "bg-emerald-400" : comp.aiConfidence > 0.5 ? "bg-amber-400" : "bg-red-400"
+                            }`}
+                            style={{ width: `${comp.aiConfidence * 100}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {!comp.confirmed && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleConfirm(comp.id); }}
+                              className="text-emerald-400/60 hover:text-emerald-400 p-1"
+                              title="Confirm"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                              </svg>
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); startEdit(comp); }}
+                            className="text-slate-500 hover:text-slate-300 p-1"
+                            title="Edit"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDelete(comp.id); }}
+                            className="text-red-400/40 hover:text-red-400 p-1"
+                            title="Remove"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                            </svg>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+
+              {addingNew ? (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.02]">
+                  <input
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="Component name"
+                    className="input-field flex-1 text-sm py-1"
+                    autoFocus
+                    onKeyDown={(e) => e.key === "Enter" && handleAddComponent()}
+                  />
+                  <select
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value as ComponentCategory)}
+                    className="input-field w-24 text-xs py-1"
+                  >
+                    {Object.keys(COMPONENT_CATEGORIES).map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                  <button onClick={handleAddComponent} className="text-emerald-400 hover:text-emerald-300 p-1">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
+                  </button>
+                  <button onClick={() => setAddingNew(false)} className="text-slate-500 hover:text-slate-300 p-1">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setAddingNew(true)}
+                  className="w-full py-2 rounded-lg border border-dashed border-white/[0.08] text-xs text-slate-500 hover:text-slate-300 hover:border-white/[0.15] transition-colors"
+                >
+                  + Add Component
+                </button>
+              )}
+            </div>
+
+            {confirmedCount < components.length && (
+              <button
+                onClick={handleConfirmAll}
+                disabled={saving}
+                className="btn-primary w-full py-2.5 rounded-xl text-sm mt-4"
+              >
+                {saving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                    Confirming...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
+                    Confirm All ({components.length - confirmedCount} remaining)
                   </>
                 )}
-              </div>
-            );
-          })}
-
-          {/* Add new component */}
-          {addingNew ? (
-            <div className="flex items-center gap-2 p-2.5 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.02]">
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Component name"
-                className="input-field flex-1 text-sm py-1"
-                autoFocus
-                onKeyDown={(e) => e.key === "Enter" && handleAddComponent()}
-              />
-              <select
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value as ComponentCategory)}
-                className="input-field w-24 text-xs py-1"
-              >
-                {Object.keys(COMPONENT_CATEGORIES).map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-              <button onClick={handleAddComponent} className="text-emerald-400 hover:text-emerald-300 p-1">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                </svg>
               </button>
-              <button onClick={() => setAddingNew(false)} className="text-slate-500 hover:text-slate-300 p-1">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                </svg>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ====== ANNOTATIONS TAB ====== */}
+      {activeMode === "annotations" && (
+        <>
+          {currentViewImage && (
+            <AnnotationOverlay
+              imageUrl={currentViewImage.imageUrl}
+              annotations={viewAnnotations}
+              onAddAnnotation={handleAddAnnotation}
+              onRemoveAnnotation={handleRemoveAnnotation}
+              selectedId={selectedAnnotationId}
+              onSelect={setSelectedAnnotationId}
+              isEditing={annotationEditing}
+            />
+          )}
+
+          <div className="glass-card-static rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3
+                className="text-sm font-semibold text-white"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
+                Annotations
+              </h3>
+              <button
+                onClick={() => setAnnotationEditing(!annotationEditing)}
+                className={`
+                  px-3 py-1 rounded-lg text-[10px] font-medium transition-all duration-200
+                  ${annotationEditing
+                    ? "bg-cyan-500/20 text-cyan-400 border border-cyan-400/30"
+                    : "bg-white/[0.04] text-slate-400 border border-white/[0.06] hover:text-slate-300"
+                  }
+                `}
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                {annotationEditing ? "Done" : "Draw Arrows"}
               </button>
             </div>
-          ) : (
-            <button
-              onClick={() => setAddingNew(true)}
-              className="w-full py-2 rounded-lg border border-dashed border-white/[0.08] text-xs text-slate-500 hover:text-slate-300 hover:border-white/[0.15] transition-colors"
-            >
-              + Add Component
-            </button>
-          )}
-        </div>
 
-        {/* Confirm All */}
-        {confirmedCount < components.length && (
-          <button
-            onClick={handleConfirmAll}
-            disabled={saving}
-            className="btn-primary w-full py-2.5 rounded-xl text-sm mt-4"
-          >
-            {saving ? (
-              <>
-                <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                Confirming...
-              </>
+            {viewAnnotations.length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-4">
+                {annotationEditing
+                  ? "Click and drag on the image to draw an arrow callout"
+                  : "No annotations on this view. Click \"Draw Arrows\" to start."}
+              </p>
             ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                </svg>
-                Confirm All ({components.length - confirmedCount} remaining)
-              </>
+              <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                {viewAnnotations.map((ann, i) => (
+                  <div
+                    key={ann.id}
+                    className={`
+                      flex items-center gap-2 p-2 rounded-lg border transition-all duration-200
+                      ${selectedAnnotationId === ann.id
+                        ? "border-cyan-400/30 bg-cyan-400/[0.04]"
+                        : "border-white/[0.04] hover:border-white/[0.08]"
+                      }
+                    `}
+                    onClick={() => setSelectedAnnotationId(ann.id)}
+                  >
+                    <span
+                      className="text-[10px] text-cyan-400 w-5 text-center shrink-0"
+                      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                    >
+                      {i + 1}
+                    </span>
+                    <input
+                      value={ann.text}
+                      onChange={(e) => handleUpdateAnnotationText(ann.id, e.target.value)}
+                      placeholder="Enter callout text..."
+                      className="input-field flex-1 text-xs py-1"
+                      maxLength={2000}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveAnnotation(ann.id);
+                      }}
+                      className="text-red-400/40 hover:text-red-400 p-1 shrink-0"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
-          </button>
-        )}
-      </div>
+
+            <button
+              onClick={handleSaveAnnotations}
+              disabled={savingAnnotations}
+              className="btn-primary w-full py-2 rounded-xl text-xs"
+            >
+              {savingAnnotations ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                  </svg>
+                  Save Annotations
+                </>
+              )}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ====== STITCHING TAB ====== */}
+      {activeMode === "stitching" && (
+        <>
+          {currentViewImage && (
+            <StitchOverlay
+              imageUrl={currentViewImage.imageUrl}
+              callouts={viewStitchCallouts}
+              onAddCallout={handleAddStitchCallout}
+              onRemoveCallout={handleRemoveStitchCallout}
+              onUpdateCallout={handleUpdateStitchCallout}
+              selectedId={selectedStitchId}
+              onSelect={setSelectedStitchId}
+              isEditing={stitchEditing}
+            />
+          )}
+
+          <div className="glass-card-static rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3
+                className="text-sm font-semibold text-white"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
+                Stitch Details
+              </h3>
+              <button
+                onClick={() => setStitchEditing(!stitchEditing)}
+                className={`
+                  px-3 py-1 rounded-lg text-[10px] font-medium transition-all duration-200
+                  ${stitchEditing
+                    ? "bg-amber-500/20 text-amber-400 border border-amber-400/30"
+                    : "bg-white/[0.04] text-slate-400 border border-white/[0.06] hover:text-slate-300"
+                  }
+                `}
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                {stitchEditing ? "Done" : "Place Markers"}
+              </button>
+            </div>
+
+            {viewStitchCallouts.length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-4">
+                {stitchEditing
+                  ? "Click on the image to place a stitch marker"
+                  : "No stitch callouts on this view. Click \"Place Markers\" to start."}
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500">
+                {viewStitchCallouts.length} callout{viewStitchCallouts.length !== 1 ? "s" : ""} on this view.
+                Click a marker to edit its details above.
+              </p>
+            )}
+
+            <button
+              onClick={handleSaveStitchCallouts}
+              disabled={savingStitches}
+              className="btn-primary w-full py-2 rounded-xl text-xs"
+            >
+              {savingStitches ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                  </svg>
+                  Save Stitch Details
+                </>
+              )}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

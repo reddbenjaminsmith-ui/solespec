@@ -316,6 +316,7 @@ export default function ModelViewer({
         {status !== "checking" && (
           <Canvas
             gl={{ preserveDrawingBuffer: true, antialias: true }}
+            dpr={[1, 2]}
             camera={{ fov: 50, near: 0.01, far: 1000 }}
             style={{ background: "#12121e" }}
           >

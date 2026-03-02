@@ -65,6 +65,19 @@ export default function ViewCapture({
     const distance = calculateCameraDistance(dims);
     const capturedViews: RenderedView[] = [];
 
+    // Increase renderer resolution for HD captures
+    const renderer = gl as unknown as THREE.WebGLRenderer;
+    const origSize = renderer.getSize(new THREE.Vector2());
+    const origPixelRatio = renderer.getPixelRatio();
+    const hdWidth = 2048;
+    const hdHeight = 1536;
+    renderer.setPixelRatio(1);
+    renderer.setSize(hdWidth, hdHeight, false);
+    const cam = camera as THREE.PerspectiveCamera;
+    const origAspect = cam.aspect;
+    cam.aspect = hdWidth / hdHeight;
+    cam.updateProjectionMatrix();
+
     try {
       for (let i = 0; i < TECHNICAL_VIEWS.length; i++) {
         const viewName = TECHNICAL_VIEWS[i] as TechnicalView;
@@ -78,7 +91,6 @@ export default function ViewCapture({
 
         // Scale camera positions by model size (CAMERA_POSITIONS use distance 3)
         const scale = distance / 3;
-        const cam = camera as THREE.PerspectiveCamera;
         cam.position.set(
           camPos.position[0] * scale + dims.center.x,
           camPos.position[1] * scale + dims.center.y,
@@ -94,7 +106,6 @@ export default function ViewCapture({
         }
 
         // Force render and wait for frames to complete
-        const renderer = gl as unknown as THREE.WebGLRenderer;
         const threeScene = scene as THREE.Scene;
         renderer.render(threeScene, cam);
         await waitFrames(3);
@@ -143,6 +154,12 @@ export default function ViewCapture({
       );
       setError("Failed to capture views. Please try again.");
     } finally {
+      // Restore original renderer size
+      renderer.setPixelRatio(origPixelRatio);
+      renderer.setSize(origSize.x, origSize.y, false);
+      cam.aspect = origAspect;
+      cam.updateProjectionMatrix();
+
       setCapturing(false);
       setProgress(null);
     }

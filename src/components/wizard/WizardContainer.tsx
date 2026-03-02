@@ -7,6 +7,7 @@ import MeasurementReview from "./MeasurementReview";
 import MaterialsWizard from "./MaterialsWizard";
 import ConstructionWizard from "./ConstructionWizard";
 import BOMGenerator from "./BOMGenerator";
+import CrossSectionEditor from "./CrossSectionEditor";
 
 interface WizardContainerProps {
   projectId: string;
@@ -21,12 +22,12 @@ export default function WizardContainer({
   onStepChange,
   onComplete,
 }: WizardContainerProps) {
-  const [currentStep, setCurrentStep] = useState(Math.max(1, Math.min(6, initialStep)));
+  const [currentStep, setCurrentStep] = useState(Math.max(1, Math.min(7, initialStep)));
   const [stepReady, setStepReady] = useState(false);
 
   const goToStep = useCallback(
     async (step: number) => {
-      if (step < 1 || step > 6) return;
+      if (step < 1 || step > 7) return;
 
       // Update wizard step in Airtable
       try {
@@ -51,7 +52,7 @@ export default function WizardContainer({
   }, []);
 
   const handleNext = useCallback(() => {
-    if (currentStep === 6) {
+    if (currentStep === 7) {
       onComplete();
       return;
     }
@@ -73,12 +74,14 @@ export default function WizardContainer({
       case 2:
         return <MeasurementReview {...props} />;
       case 3:
-        return <MaterialsWizard {...props} />;
+        return <CrossSectionEditor {...props} />;
       case 4:
-        return <ConstructionWizard {...props} />;
+        return <MaterialsWizard {...props} />;
       case 5:
-        return <BOMGenerator {...props} />;
+        return <ConstructionWizard {...props} />;
       case 6:
+        return <BOMGenerator {...props} />;
+      case 7:
         return (
           <div className="flex flex-col items-center justify-center py-16 gap-6">
             <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
@@ -133,18 +136,18 @@ export default function WizardContainer({
           className="text-xs text-slate-600"
           style={{ fontFamily: "'JetBrains Mono', monospace" }}
         >
-          Step {currentStep} of 6
+          Step {currentStep} of 7
         </span>
 
         <button
           onClick={handleNext}
-          disabled={!stepReady && currentStep !== 6}
+          disabled={!stepReady && currentStep !== 7}
           className={`
             btn-primary px-4 py-2 rounded-xl text-sm
-            ${!stepReady && currentStep !== 6 ? "opacity-40 cursor-not-allowed" : ""}
+            ${!stepReady && currentStep !== 7 ? "opacity-40 cursor-not-allowed" : ""}
           `}
         >
-          {currentStep === 6 ? "Export PDF" : "Next"}
+          {currentStep === 7 ? "Export PDF" : "Next"}
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
           </svg>

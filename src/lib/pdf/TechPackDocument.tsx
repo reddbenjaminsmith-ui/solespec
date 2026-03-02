@@ -1,7 +1,17 @@
 /* eslint-disable jsx-a11y/alt-text */
 import { Document, Page, Text, View, Image } from "@react-pdf/renderer";
 import { pdfStyles as s } from "./styles";
-import type { Project, ShoeComponent, Measurement, Specifications, BOMItem, RenderedView } from "@/lib/types";
+import type {
+  Project,
+  ShoeComponent,
+  Measurement,
+  Specifications,
+  BOMItem,
+  RenderedView,
+  CrossSection,
+  Annotation,
+  StitchCallout,
+} from "@/lib/types";
 
 const VIEW_LABELS: Record<string, string> = {
   front: "Front",
@@ -20,6 +30,9 @@ interface TechPackDocumentProps {
   measurements: Measurement[];
   specifications: Specifications | null;
   bomItems: BOMItem[];
+  crossSections: CrossSection[];
+  annotations: Annotation[];
+  stitchCallouts: StitchCallout[];
 }
 
 function PageHeader({ pageNum, totalPages }: { pageNum: number; totalPages: number }) {
@@ -42,8 +55,11 @@ export default function TechPackDocument({
   measurements,
   specifications,
   bomItems,
+  crossSections,
+  annotations,
+  stitchCallouts,
 }: TechPackDocumentProps) {
-  const totalPages = 7;
+  const totalPages = 8;
   const thumbnail = views.find((v) => v.viewName === "three_quarter");
   const confirmedComponents = components.filter((c) => c.confirmed);
 
@@ -53,6 +69,12 @@ export default function TechPackDocument({
     if (!grouped[comp.category]) grouped[comp.category] = [];
     grouped[comp.category].push(comp);
   }
+
+  // Cross-section views
+  const topView = views.find((v) => v.viewName === "top");
+  const lateralView = views.find((v) => v.viewName === "right");
+  const topSections = crossSections.filter((cs) => cs.viewType === "top");
+  const rightSections = crossSections.filter((cs) => cs.viewType === "right");
 
   return (
     <Document>
@@ -73,7 +95,7 @@ export default function TechPackDocument({
         </View>
       </Page>
 
-      {/* Page 2: Technical Views */}
+      {/* Page 2: Technical Views + Annotation Notes */}
       <Page size="A4" style={s.page}>
         <PageHeader pageNum={2} totalPages={totalPages} />
         <Text style={s.sectionHeader}>Technical Views</Text>
@@ -87,11 +109,90 @@ export default function TechPackDocument({
             </View>
           ))}
         </View>
+
+        {/* Annotation notes */}
+        {annotations.length > 0 && (
+          <View style={{ marginTop: 12 }}>
+            <Text style={s.sectionSubheader}>Callout Notes</Text>
+            {annotations.map((ann, i) => (
+              <View key={ann.id || i} style={s.annotationItem}>
+                <Text style={s.annotationBullet}>
+                  [{VIEW_LABELS[ann.viewName] || ann.viewName}]
+                </Text>
+                <Text style={s.annotationText}>{ann.text}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </Page>
 
-      {/* Page 3: Component List */}
+      {/* Page 3: Cross-Section Reference */}
       <Page size="A4" style={s.page}>
         <PageHeader pageNum={3} totalPages={totalPages} />
+        <Text style={s.sectionHeader}>Cross-Section Reference</Text>
+
+        {crossSections.length === 0 ? (
+          <Text style={s.bodyText}>No cross-section cut lines defined.</Text>
+        ) : (
+          <View>
+            {/* Reference images */}
+            <View style={s.crossSectionRow}>
+              <View style={s.crossSectionCol}>
+                {topView ? (
+                  <Image src={topView.imageUrl} style={s.crossSectionImage} />
+                ) : (
+                  <View style={[s.crossSectionImage, { justifyContent: "center", alignItems: "center" }]}>
+                    <Text style={s.label}>No top view</Text>
+                  </View>
+                )}
+                <Text style={s.crossSectionLabel}>
+                  Top View - {topSections.length} cut line{topSections.length !== 1 ? "s" : ""}
+                </Text>
+              </View>
+              <View style={s.crossSectionCol}>
+                {lateralView ? (
+                  <Image src={lateralView.imageUrl} style={s.crossSectionImage} />
+                ) : (
+                  <View style={[s.crossSectionImage, { justifyContent: "center", alignItems: "center" }]}>
+                    <Text style={s.label}>No lateral view</Text>
+                  </View>
+                )}
+                <Text style={s.crossSectionLabel}>
+                  Lateral View - {rightSections.length} cut line{rightSections.length !== 1 ? "s" : ""}
+                </Text>
+              </View>
+            </View>
+
+            {/* Cross-section details table */}
+            <View style={s.tableContainer}>
+              <View style={s.tableHeader}>
+                <Text style={[s.tableHeaderCell, { width: "15%" }]}>Label</Text>
+                <Text style={[s.tableHeaderCell, { width: "20%" }]}>View</Text>
+                <Text style={[s.tableHeaderCell, { width: "15%", textAlign: "right" }]}>Position</Text>
+                <Text style={[s.tableHeaderCell, { width: "50%" }]}>Description</Text>
+              </View>
+              {crossSections.map((cs, i) => (
+                <View key={cs.id || i} style={i % 2 === 0 ? s.tableRow : s.tableRowAlt}>
+                  <Text style={[s.tableCellBold, { width: "15%" }]}>{cs.label}</Text>
+                  <Text style={[s.tableCell, { width: "20%" }]}>
+                    {cs.viewType === "top" ? "Top" : "Lateral"}
+                  </Text>
+                  <Text style={[s.tableCell, { width: "15%", textAlign: "right" }]}>
+                    {cs.linePosition.toFixed(1)}%
+                  </Text>
+                  <Text style={[s.tableCell, { width: "50%" }]}>
+                    {cs.description || "-"}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+      </Page>
+
+      {/* Page 4: Components + Stitch Specifications */}
+      <Page size="A4" style={s.page}>
+        <PageHeader pageNum={4} totalPages={totalPages} />
         <Text style={s.sectionHeader}>Components</Text>
         <Text style={s.bodyText}>
           {confirmedComponents.length} confirmed components across {Object.keys(grouped).length} categories
@@ -122,11 +223,50 @@ export default function TechPackDocument({
             </View>
           </View>
         ))}
+
+        {/* Stitch Specifications */}
+        {stitchCallouts.length > 0 && (
+          <View style={{ marginTop: 16 }}>
+            <Text style={s.sectionSubheader}>Stitch Specifications</Text>
+            <View style={s.tableContainer}>
+              <View style={s.tableHeader}>
+                <Text style={[s.tableHeaderCell, { width: "18%" }]}>View</Text>
+                <Text style={[s.tableHeaderCell, { width: "12%", textAlign: "center" }]}>SPI</Text>
+                <Text style={[s.tableHeaderCell, { width: "18%" }]}>Thread</Text>
+                <Text style={[s.tableHeaderCell, { width: "18%" }]}>Pattern</Text>
+                <Text style={[s.tableHeaderCell, { width: "16%" }]}>Color</Text>
+                <Text style={[s.tableHeaderCell, { width: "18%" }]}>Notes</Text>
+              </View>
+              {stitchCallouts.map((sc, i) => (
+                <View key={sc.id || i} style={i % 2 === 0 ? s.tableRow : s.tableRowAlt}>
+                  <Text style={[s.tableCell, { width: "18%" }]}>
+                    {VIEW_LABELS[sc.viewName] || sc.viewName}
+                  </Text>
+                  <Text style={[s.tableCellBold, { width: "12%", textAlign: "center" }]}>
+                    {sc.spi}
+                  </Text>
+                  <Text style={[s.tableCell, { width: "18%" }]}>
+                    {sc.threadType}
+                  </Text>
+                  <Text style={[s.tableCell, { width: "18%" }]}>
+                    {sc.stitchPattern}
+                  </Text>
+                  <Text style={[s.tableCell, { width: "16%" }]}>
+                    {sc.threadColor || "-"}
+                  </Text>
+                  <Text style={[s.tableCell, { width: "18%" }]}>
+                    {sc.notes || "-"}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
       </Page>
 
-      {/* Page 4: Measurements */}
+      {/* Page 5: Measurements */}
       <Page size="A4" style={s.page}>
-        <PageHeader pageNum={4} totalPages={totalPages} />
+        <PageHeader pageNum={5} totalPages={totalPages} />
         <Text style={s.sectionHeader}>Measurements</Text>
         <Text style={s.bodyText}>
           Reference size: {measurements[0]?.sizeReference || "US Men's 9"}. All values in millimeters.
@@ -151,47 +291,77 @@ export default function TechPackDocument({
         </View>
       </Page>
 
-      {/* Page 5: Materials + Construction */}
+      {/* Page 6: Materials + Construction + Color Specs */}
       <Page size="A4" style={s.page}>
-        <PageHeader pageNum={5} totalPages={totalPages} />
+        <PageHeader pageNum={6} totalPages={totalPages} />
         <Text style={s.sectionHeader}>Material Specifications</Text>
 
         {specifications ? (
           <View>
             {specifications.upperMaterial && (
-              <View style={s.infoRow}>
-                <Text style={s.infoLabel}>Upper (Primary):</Text>
-                <Text style={s.infoValue}>{specifications.upperMaterial}</Text>
+              <View>
+                <View style={s.infoRow}>
+                  <Text style={s.infoLabel}>Upper (Primary):</Text>
+                  <Text style={s.infoValue}>{specifications.upperMaterial}</Text>
+                </View>
+                {specifications.upperColor && (
+                  <Text style={s.colorSpec}>Color: {specifications.upperColor}</Text>
+                )}
               </View>
             )}
             {specifications.upperSecondary && (
-              <View style={s.infoRow}>
-                <Text style={s.infoLabel}>Upper (Secondary):</Text>
-                <Text style={s.infoValue}>{specifications.upperSecondary}</Text>
+              <View>
+                <View style={s.infoRow}>
+                  <Text style={s.infoLabel}>Upper (Secondary):</Text>
+                  <Text style={s.infoValue}>{specifications.upperSecondary}</Text>
+                </View>
+                {specifications.upperSecondaryColor && (
+                  <Text style={s.colorSpec}>Color: {specifications.upperSecondaryColor}</Text>
+                )}
               </View>
             )}
             {specifications.liningMaterial && (
-              <View style={s.infoRow}>
-                <Text style={s.infoLabel}>Lining:</Text>
-                <Text style={s.infoValue}>{specifications.liningMaterial}</Text>
+              <View>
+                <View style={s.infoRow}>
+                  <Text style={s.infoLabel}>Lining:</Text>
+                  <Text style={s.infoValue}>{specifications.liningMaterial}</Text>
+                </View>
+                {specifications.liningColor && (
+                  <Text style={s.colorSpec}>Color: {specifications.liningColor}</Text>
+                )}
               </View>
             )}
             {specifications.outsoleMaterial && (
-              <View style={s.infoRow}>
-                <Text style={s.infoLabel}>Outsole:</Text>
-                <Text style={s.infoValue}>{specifications.outsoleMaterial}</Text>
+              <View>
+                <View style={s.infoRow}>
+                  <Text style={s.infoLabel}>Outsole:</Text>
+                  <Text style={s.infoValue}>{specifications.outsoleMaterial}</Text>
+                </View>
+                {specifications.outsoleColor && (
+                  <Text style={s.colorSpec}>Color: {specifications.outsoleColor}</Text>
+                )}
               </View>
             )}
             {specifications.midsoleMaterial && (
-              <View style={s.infoRow}>
-                <Text style={s.infoLabel}>Midsole:</Text>
-                <Text style={s.infoValue}>{specifications.midsoleMaterial}</Text>
+              <View>
+                <View style={s.infoRow}>
+                  <Text style={s.infoLabel}>Midsole:</Text>
+                  <Text style={s.infoValue}>{specifications.midsoleMaterial}</Text>
+                </View>
+                {specifications.midsoleColor && (
+                  <Text style={s.colorSpec}>Color: {specifications.midsoleColor}</Text>
+                )}
               </View>
             )}
             {specifications.hardware && (
-              <View style={s.infoRow}>
-                <Text style={s.infoLabel}>Hardware:</Text>
-                <Text style={s.infoValue}>{specifications.hardware}</Text>
+              <View>
+                <View style={s.infoRow}>
+                  <Text style={s.infoLabel}>Hardware:</Text>
+                  <Text style={s.infoValue}>{specifications.hardware}</Text>
+                </View>
+                {specifications.hardwareColor && (
+                  <Text style={s.colorSpec}>Color: {specifications.hardwareColor}</Text>
+                )}
               </View>
             )}
 
@@ -216,9 +386,9 @@ export default function TechPackDocument({
         )}
       </Page>
 
-      {/* Page 6: BOM */}
+      {/* Page 7: BOM */}
       <Page size="A4" style={s.page}>
-        <PageHeader pageNum={6} totalPages={totalPages} />
+        <PageHeader pageNum={7} totalPages={totalPages} />
         <Text style={s.sectionHeader}>Bill of Materials</Text>
         <Text style={s.bodyText}>{bomItems.length} items</Text>
 
@@ -246,9 +416,9 @@ export default function TechPackDocument({
         </View>
       </Page>
 
-      {/* Page 7: Footer */}
+      {/* Page 8: Footer */}
       <Page size="A4" style={s.page}>
-        <PageHeader pageNum={7} totalPages={totalPages} />
+        <PageHeader pageNum={8} totalPages={totalPages} />
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <Text style={[s.brandText, { fontSize: 20, marginBottom: 8 }]}>
             <Text style={s.brandAccent}>Sole</Text>Spec

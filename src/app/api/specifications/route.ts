@@ -68,6 +68,12 @@ export async function POST(request: Request) {
       Hardware: specifications.hardware,
       "Construction Method": specifications.constructionMethod,
       "Additional Notes": specifications.additionalNotes,
+      "Upper Color": specifications.upperColor,
+      "Upper Secondary Color": specifications.upperSecondaryColor,
+      "Lining Color": specifications.liningColor,
+      "Outsole Color": specifications.outsoleColor,
+      "Midsole Color": specifications.midsoleColor,
+      "Hardware Color": specifications.hardwareColor,
     };
 
     for (const [key, value] of Object.entries(textFields)) {
@@ -95,6 +101,12 @@ export async function POST(request: Request) {
       hardware: record.get("Hardware") || "",
       constructionMethod: record.get("Construction Method") || "",
       additionalNotes: record.get("Additional Notes") || "",
+      upperColor: record.get("Upper Color") || "",
+      upperSecondaryColor: record.get("Upper Secondary Color") || "",
+      liningColor: record.get("Lining Color") || "",
+      outsoleColor: record.get("Outsole Color") || "",
+      midsoleColor: record.get("Midsole Color") || "",
+      hardwareColor: record.get("Hardware Color") || "",
     });
   } catch (error) {
     console.error(
@@ -153,6 +165,12 @@ export async function GET(request: Request) {
         hardware: record.get("Hardware") || "",
         constructionMethod: record.get("Construction Method") || "",
         additionalNotes: record.get("Additional Notes") || "",
+        upperColor: record.get("Upper Color") || "",
+        upperSecondaryColor: record.get("Upper Secondary Color") || "",
+        liningColor: record.get("Lining Color") || "",
+        outsoleColor: record.get("Outsole Color") || "",
+        midsoleColor: record.get("Midsole Color") || "",
+        hardwareColor: record.get("Hardware Color") || "",
       },
     });
   } catch (error) {
@@ -211,6 +229,12 @@ export async function PATCH(request: Request) {
       Hardware: body.hardware,
       "Construction Method": body.constructionMethod,
       "Additional Notes": body.additionalNotes,
+      "Upper Color": body.upperColor,
+      "Upper Secondary Color": body.upperSecondaryColor,
+      "Lining Color": body.liningColor,
+      "Outsole Color": body.outsoleColor,
+      "Midsole Color": body.midsoleColor,
+      "Hardware Color": body.hardwareColor,
     };
 
     for (const [key, value] of Object.entries(textFields)) {
@@ -244,6 +268,12 @@ export async function PATCH(request: Request) {
       hardware: record.get("Hardware") || "",
       constructionMethod: record.get("Construction Method") || "",
       additionalNotes: record.get("Additional Notes") || "",
+      upperColor: record.get("Upper Color") || "",
+      upperSecondaryColor: record.get("Upper Secondary Color") || "",
+      liningColor: record.get("Lining Color") || "",
+      outsoleColor: record.get("Outsole Color") || "",
+      midsoleColor: record.get("Midsole Color") || "",
+      hardwareColor: record.get("Hardware Color") || "",
     });
   } catch (error) {
     console.error(

@@ -76,6 +76,12 @@ export interface Specifications {
   hardware: string;
   constructionMethod: string;
   additionalNotes: string;
+  upperColor: string;
+  upperSecondaryColor: string;
+  liningColor: string;
+  outsoleColor: string;
+  midsoleColor: string;
+  hardwareColor: string;
 }
 
 // Bill of Materials line item
@@ -87,6 +93,51 @@ export interface BOMItem {
   supplier: string;
   color: string;
   quantityPerPair: string;
+  notes: string;
+  sortOrder: number;
+}
+
+// Cross-section cut line on a view
+export interface CrossSection {
+  id: string;
+  projectId: string;
+  label: string; // "A:A", "B:B", etc.
+  viewType: "top" | "right";
+  linePosition: number; // 0-100, X position of vertical line
+  description: string;
+  sortOrder: number;
+}
+
+// Arrow annotation on a technical view
+export interface Annotation {
+  id: string;
+  projectId: string;
+  viewName: string;
+  arrowStartX: number; // 0-100
+  arrowStartY: number; // 0-100
+  arrowEndX: number; // 0-100
+  arrowEndY: number; // 0-100
+  text: string;
+  sortOrder: number;
+}
+
+// Stitch detail callout on a technical view
+export interface StitchCallout {
+  id: string;
+  projectId: string;
+  viewName: string;
+  positionX: number; // 0-100
+  positionY: number; // 0-100
+  spi: number; // stitches per inch
+  threadType: "polyester" | "nylon" | "cotton" | "kevlar";
+  stitchPattern:
+    | "lockstitch"
+    | "chainstitch"
+    | "zigzag"
+    | "bartack"
+    | "flatlock"
+    | "overlock";
+  threadColor: string; // Pantone code
   notes: string;
   sortOrder: number;
 }

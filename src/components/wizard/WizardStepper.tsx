@@ -3,10 +3,11 @@
 const WIZARD_STEPS = [
   { number: 1, label: "Components" },
   { number: 2, label: "Measurements" },
-  { number: 3, label: "Materials" },
-  { number: 4, label: "Construction" },
-  { number: 5, label: "BOM" },
-  { number: 6, label: "Export" },
+  { number: 3, label: "Sections" },
+  { number: 4, label: "Materials" },
+  { number: 5, label: "Construction" },
+  { number: 6, label: "BOM" },
+  { number: 7, label: "Export" },
 ];
 
 interface WizardStepperProps {

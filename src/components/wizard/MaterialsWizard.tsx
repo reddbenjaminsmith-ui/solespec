@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import type { ShoeComponent, Specifications } from "@/lib/types";
 import { MATERIALS } from "@/lib/constants";
+import PantoneInput from "./PantoneInput";
 
 interface MaterialsWizardProps {
   projectId: string;
@@ -17,6 +18,12 @@ interface MaterialFormData {
   midsoleMaterial: string;
   hardware: string;
   additionalNotes: string;
+  upperColor: string;
+  upperSecondaryColor: string;
+  liningColor: string;
+  outsoleColor: string;
+  midsoleColor: string;
+  hardwareColor: string;
 }
 
 const EMPTY_FORM: MaterialFormData = {
@@ -27,6 +34,12 @@ const EMPTY_FORM: MaterialFormData = {
   midsoleMaterial: "",
   hardware: "",
   additionalNotes: "",
+  upperColor: "",
+  upperSecondaryColor: "",
+  liningColor: "",
+  outsoleColor: "",
+  midsoleColor: "",
+  hardwareColor: "",
 };
 
 export default function MaterialsWizard({ projectId, onStepComplete }: MaterialsWizardProps) {
@@ -63,6 +76,12 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
               midsoleMaterial: data.specifications.midsoleMaterial || "",
               hardware: data.specifications.hardware || "",
               additionalNotes: data.specifications.additionalNotes || "",
+              upperColor: data.specifications.upperColor || "",
+              upperSecondaryColor: data.specifications.upperSecondaryColor || "",
+              liningColor: data.specifications.liningColor || "",
+              outsoleColor: data.specifications.outsoleColor || "",
+              midsoleColor: data.specifications.midsoleColor || "",
+              hardwareColor: data.specifications.hardwareColor || "",
             });
           }
         }
@@ -111,7 +130,7 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
     }
   }, [existingSpecs, formData, projectId, onStepComplete]);
 
-  // Enable Next only when data has been saved (either loaded from prior save or just saved)
+  // Enable Next only when data has been saved
   useEffect(() => {
     if (existingSpecs) {
       const hasSavedData = existingSpecs.upperMaterial || existingSpecs.outsoleMaterial || existingSpecs.liningMaterial;
@@ -164,6 +183,13 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
               </select>
             </div>
             <div>
+              <label className="text-xs text-slate-400 mb-1 block">Primary Color</label>
+              <PantoneInput
+                value={formData.upperColor}
+                onChange={(val) => updateField("upperColor", val)}
+              />
+            </div>
+            <div>
               <label className="text-xs text-slate-400 mb-1 block">Secondary Material</label>
               <select
                 value={formData.upperSecondary}
@@ -175,6 +201,13 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
                   <option key={mat} value={mat}>{mat}</option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Secondary Color</label>
+              <PantoneInput
+                value={formData.upperSecondaryColor}
+                onChange={(val) => updateField("upperSecondaryColor", val)}
+              />
             </div>
           </div>
         </section>
@@ -202,6 +235,13 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
               </select>
             </div>
             <div>
+              <label className="text-xs text-slate-400 mb-1 block">Outsole Color</label>
+              <PantoneInput
+                value={formData.outsoleColor}
+                onChange={(val) => updateField("outsoleColor", val)}
+              />
+            </div>
+            <div>
               <label className="text-xs text-slate-400 mb-1 block">Midsole</label>
               <select
                 value={formData.midsoleMaterial}
@@ -214,6 +254,13 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
                 ))}
               </select>
             </div>
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Midsole Color</label>
+              <PantoneInput
+                value={formData.midsoleColor}
+                onChange={(val) => updateField("midsoleColor", val)}
+              />
+            </div>
           </div>
         </section>
       )}
@@ -225,17 +272,26 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
             Lining
           </h3>
-          <div className="glass-card-static rounded-xl p-4">
-            <select
-              value={formData.liningMaterial}
-              onChange={(e) => updateField("liningMaterial", e.target.value)}
-              className="input-field text-sm"
-            >
-              <option value="">Select material...</option>
-              {MATERIALS.lining.map((mat) => (
-                <option key={mat} value={mat}>{mat}</option>
-              ))}
-            </select>
+          <div className="glass-card-static rounded-xl p-4 space-y-3">
+            <div>
+              <select
+                value={formData.liningMaterial}
+                onChange={(e) => updateField("liningMaterial", e.target.value)}
+                className="input-field text-sm"
+              >
+                <option value="">Select material...</option>
+                {MATERIALS.lining.map((mat) => (
+                  <option key={mat} value={mat}>{mat}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Lining Color</label>
+              <PantoneInput
+                value={formData.liningColor}
+                onChange={(val) => updateField("liningColor", val)}
+              />
+            </div>
           </div>
         </section>
       )}
@@ -247,17 +303,26 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
             <span className="w-2 h-2 rounded-full bg-amber-400" />
             Hardware Finish
           </h3>
-          <div className="glass-card-static rounded-xl p-4">
-            <select
-              value={formData.hardware}
-              onChange={(e) => updateField("hardware", e.target.value)}
-              className="input-field text-sm"
-            >
-              <option value="">Select finish...</option>
-              {MATERIALS.hardware.map((mat) => (
-                <option key={mat} value={mat}>{mat}</option>
-              ))}
-            </select>
+          <div className="glass-card-static rounded-xl p-4 space-y-3">
+            <div>
+              <select
+                value={formData.hardware}
+                onChange={(e) => updateField("hardware", e.target.value)}
+                className="input-field text-sm"
+              >
+                <option value="">Select finish...</option>
+                {MATERIALS.hardware.map((mat) => (
+                  <option key={mat} value={mat}>{mat}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Hardware Color</label>
+              <PantoneInput
+                value={formData.hardwareColor}
+                onChange={(val) => updateField("hardwareColor", val)}
+              />
+            </div>
           </div>
         </section>
       )}
@@ -268,7 +333,7 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
         <textarea
           value={formData.additionalNotes}
           onChange={(e) => updateField("additionalNotes", e.target.value)}
-          placeholder="Color codes, Pantone references, special requirements..."
+          placeholder="Special requirements, finish details..."
           className="input-field text-sm min-h-[80px] resize-y"
           maxLength={2000}
         />

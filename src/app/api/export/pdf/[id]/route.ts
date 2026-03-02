@@ -7,12 +7,15 @@ import {
   measurementsTable,
   specificationsTable,
   bomItemsTable,
+  crossSectionsTable,
+  annotationsTable,
+  stitchCalloutsTable,
   escapeForFormula,
   isValidRecordId,
 } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import TechPackDocument from "@/lib/pdf/TechPackDocument";
-import type { Project, RenderedView, ShoeComponent, Measurement, Specifications, BOMItem } from "@/lib/types";
+import type { Project, RenderedView, ShoeComponent, Measurement, Specifications, BOMItem, CrossSection, Annotation, StitchCallout } from "@/lib/types";
 import React from "react";
 
 export const maxDuration = 60;
@@ -63,12 +66,15 @@ export async function GET(
     const escapedId = escapeForFormula(projectId);
     const formula = `FIND("${escapedId}", ARRAYJOIN({Project})) > 0`;
 
-    const [viewRecords, compRecords, measRecords, specRecords, bomRecords] = await Promise.all([
+    const [viewRecords, compRecords, measRecords, specRecords, bomRecords, csRecords, annRecords, stitchRecords] = await Promise.all([
       renderedViewsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
       componentsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
       measurementsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
       specificationsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
       bomItemsTable.select({ filterByFormula: formula, sort: [{ field: "Sort Order", direction: "asc" }], maxRecords: 100 }).all(),
+      crossSectionsTable.select({ filterByFormula: formula, sort: [{ field: "Sort Order", direction: "asc" }], maxRecords: 100 }).all(),
+      annotationsTable.select({ filterByFormula: formula, sort: [{ field: "Sort Order", direction: "asc" }], maxRecords: 100 }).all(),
+      stitchCalloutsTable.select({ filterByFormula: formula, sort: [{ field: "Sort Order", direction: "asc" }], maxRecords: 100 }).all(),
     ]);
 
     const views = viewRecords.map((r) => ({
@@ -134,6 +140,42 @@ export async function GET(
       sortOrder: (r.fields["Sort Order"] as number) || i,
     }));
 
+    const crossSections: CrossSection[] = csRecords.map((r, i) => ({
+      id: r.id,
+      projectId,
+      label: (r.fields["Label"] as string) || "",
+      viewType: ((r.fields["View Type"] as string) || "top") as CrossSection["viewType"],
+      linePosition: (r.fields["Line Position"] as number) || 50,
+      description: (r.fields["Description"] as string) || "",
+      sortOrder: (r.fields["Sort Order"] as number) || i,
+    }));
+
+    const pdfAnnotations: Annotation[] = annRecords.map((r, i) => ({
+      id: r.id,
+      projectId,
+      viewName: (r.fields["View Name"] as string) || "",
+      arrowStartX: (r.fields["Arrow Start X"] as number) || 0,
+      arrowStartY: (r.fields["Arrow Start Y"] as number) || 0,
+      arrowEndX: (r.fields["Arrow End X"] as number) || 0,
+      arrowEndY: (r.fields["Arrow End Y"] as number) || 0,
+      text: (r.fields["Text"] as string) || "",
+      sortOrder: (r.fields["Sort Order"] as number) || i,
+    }));
+
+    const pdfStitchCallouts: StitchCallout[] = stitchRecords.map((r, i) => ({
+      id: r.id,
+      projectId,
+      viewName: (r.fields["View Name"] as string) || "",
+      positionX: (r.fields["Position X"] as number) || 0,
+      positionY: (r.fields["Position Y"] as number) || 0,
+      spi: (r.fields["SPI"] as number) || 0,
+      threadType: ((r.fields["Thread Type"] as string) || "polyester") as StitchCallout["threadType"],
+      stitchPattern: ((r.fields["Stitch Pattern"] as string) || "lockstitch") as StitchCallout["stitchPattern"],
+      threadColor: (r.fields["Thread Color"] as string) || "",
+      notes: (r.fields["Notes"] as string) || "",
+      sortOrder: (r.fields["Sort Order"] as number) || i,
+    }));
+
     // Render PDF
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const doc: any = React.createElement(TechPackDocument as any, {
@@ -143,6 +185,9 @@ export async function GET(
       measurements,
       specifications,
       bomItems,
+      crossSections,
+      annotations: pdfAnnotations,
+      stitchCallouts: pdfStitchCallouts,
     });
     const buffer = await renderToBuffer(doc);
 

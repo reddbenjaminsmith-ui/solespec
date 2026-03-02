@@ -184,4 +184,59 @@ export const pdfStyles = StyleSheet.create({
     fontSize: 9,
     color: "#0f172a",
   },
+  // Color spec inline
+  colorSpec: {
+    fontSize: 8,
+    color: "#0891b2",
+    marginLeft: 120,
+    marginBottom: 4,
+  },
+  // Cross-section page
+  crossSectionRow: {
+    flexDirection: "row",
+    gap: 16,
+    marginBottom: 16,
+  },
+  crossSectionCol: {
+    flex: 1,
+  },
+  crossSectionImage: {
+    width: "100%",
+    height: 180,
+    objectFit: "contain",
+    backgroundColor: "#f8fafc",
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    marginBottom: 6,
+  },
+  crossSectionLabel: {
+    fontSize: 9,
+    fontFamily: "Helvetica-Bold",
+    color: "#475569",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  // Annotation notes list
+  annotationItem: {
+    flexDirection: "row",
+    marginBottom: 3,
+    paddingLeft: 4,
+  },
+  annotationBullet: {
+    fontSize: 8,
+    color: "#0891b2",
+    width: 60,
+  },
+  annotationText: {
+    fontSize: 8,
+    color: "#334155",
+    flex: 1,
+  },
+  // Stitch specifications table (reuses table styles but defined for clarity)
+  stitchNote: {
+    fontSize: 8,
+    color: "#92400e",
+    marginTop: 4,
+  },
 });
