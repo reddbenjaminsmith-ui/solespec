@@ -8,6 +8,7 @@ import {
   extractDimensions,
   calculateCameraDistance,
 } from "@/lib/three/extract-dimensions";
+import ThreeErrorBoundary from "./ThreeErrorBoundary";
 
 export interface ThreeRefs {
   camera: THREE.PerspectiveCamera;
@@ -110,43 +111,45 @@ export default function ModelViewer({
   );
 
   return (
-    <div className="relative w-full h-full min-h-[400px] rounded-xl overflow-hidden">
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center z-10 bg-surface-900/90">
-          <div className="text-center">
-            <div className="w-10 h-10 mx-auto mb-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-            <p
-              className="text-sm text-slate-400"
-              style={{ fontFamily: "'DM Sans', sans-serif" }}
-            >
-              Loading 3D model...
-            </p>
+    <ThreeErrorBoundary key={modelUrl}>
+      <div className="relative w-full h-full min-h-[400px] rounded-xl overflow-hidden">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center z-10 bg-surface-900/90">
+            <div className="text-center">
+              <div className="w-10 h-10 mx-auto mb-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+              <p
+                className="text-sm text-slate-400"
+                style={{ fontFamily: "'DM Sans', sans-serif" }}
+              >
+                Loading 3D model...
+              </p>
+            </div>
           </div>
-        </div>
-      )}
-      <Canvas
-        gl={{ preserveDrawingBuffer: true, antialias: true }}
-        camera={{ fov: 50, near: 0.01, far: 1000 }}
-        style={{ background: "#12121e" }}
-      >
-        <Suspense fallback={null}>
-          <Model url={modelUrl} onLoaded={handleModelLoaded} />
-          <CameraSetup modelScene={modelScene} />
-          <OrbitControls
-            ref={controlsRef}
-            enablePan={true}
-            enableZoom={true}
-            enableRotate={true}
-            minDistance={0.5}
-            maxDistance={50}
-          />
-          <Environment preset="studio" />
-          <ambientLight intensity={0.4} />
-          <directionalLight position={[5, 5, 5]} intensity={1} />
-          <directionalLight position={[-3, 2, -3]} intensity={0.3} />
-          <ReadyNotifier onReady={onReady} controlsRef={controlsRef} />
-        </Suspense>
-      </Canvas>
-    </div>
+        )}
+        <Canvas
+          gl={{ preserveDrawingBuffer: true, antialias: true }}
+          camera={{ fov: 50, near: 0.01, far: 1000 }}
+          style={{ background: "#12121e" }}
+        >
+          <Suspense fallback={null}>
+            <Model url={modelUrl} onLoaded={handleModelLoaded} />
+            <CameraSetup modelScene={modelScene} />
+            <OrbitControls
+              ref={controlsRef}
+              enablePan={true}
+              enableZoom={true}
+              enableRotate={true}
+              minDistance={0.5}
+              maxDistance={50}
+            />
+            <Environment preset="studio" />
+            <ambientLight intensity={0.4} />
+            <directionalLight position={[5, 5, 5]} intensity={1} />
+            <directionalLight position={[-3, 2, -3]} intensity={0.3} />
+            <ReadyNotifier onReady={onReady} controlsRef={controlsRef} />
+          </Suspense>
+        </Canvas>
+      </div>
+    </ThreeErrorBoundary>
   );
 }

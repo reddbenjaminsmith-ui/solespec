@@ -53,6 +53,10 @@ export default function ViewCapture({
 
   const captureAllViews = useCallback(async () => {
     if (capturing) return;
+    if (!threeRefs || !threeRefs.camera || !threeRefs.gl || !threeRefs.canvas) {
+      setError("3D viewer not ready. Please wait and try again.");
+      return;
+    }
     setCapturing(true);
     setError("");
 
