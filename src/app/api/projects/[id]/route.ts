@@ -44,6 +44,7 @@ export async function GET(
       sketchUrl: record.get("Sketch URL") || "",
       predecessorModelUrl: record.get("Predecessor Model URL") || "",
       sketchAnalysis: record.get("Sketch Analysis") || "",
+      heroImageUrl: record.get("Hero Image URL") || "",
     });
   } catch (error) {
     const message =
@@ -153,6 +154,33 @@ export async function PATCH(
       );
     }
 
+    // Support updating hero image URL
+    if (body.heroImageUrl !== undefined) {
+      if (typeof body.heroImageUrl !== "string") {
+        return NextResponse.json(
+          { error: "Hero image URL must be a string" },
+          { status: 400 }
+        );
+      }
+      if (body.heroImageUrl.length > 0) {
+        try {
+          const heroUrl = new URL(body.heroImageUrl);
+          if (heroUrl.protocol !== "https:" && heroUrl.protocol !== "http:") {
+            return NextResponse.json(
+              { error: "Hero image URL must use https or http" },
+              { status: 400 }
+            );
+          }
+        } catch {
+          return NextResponse.json(
+            { error: "Invalid hero image URL" },
+            { status: 400 }
+          );
+        }
+      }
+      updates["Hero Image URL"] = body.heroImageUrl;
+    }
+
     // Support updating sketch-specific fields
     if (body.sketchAnalysis !== undefined) {
       if (typeof body.sketchAnalysis !== "string" || body.sketchAnalysis.length > 50000) {
@@ -179,6 +207,7 @@ export async function PATCH(
       sketchUrl: record.get("Sketch URL") || "",
       predecessorModelUrl: record.get("Predecessor Model URL") || "",
       sketchAnalysis: record.get("Sketch Analysis") || "",
+      heroImageUrl: record.get("Hero Image URL") || "",
     });
   } catch (error) {
     const message =

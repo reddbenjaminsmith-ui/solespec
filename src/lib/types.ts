@@ -14,6 +14,7 @@ export interface Project {
   sketchUrl?: string;
   predecessorModelUrl?: string;
   sketchAnalysis?: string;
+  heroImageUrl?: string;
 }
 
 // Sketch analysis result from GPT-5.2 Vision
@@ -39,6 +40,7 @@ export interface RenderedView {
   imageUrl: string;
   isPhotorealistic?: boolean;
   isStudioRender?: boolean;
+  isHeroReference?: boolean;
 }
 
 // AI-detected shoe component

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { projectId, viewName, imageUrl, isStudioRender } = body;
+    const { projectId, viewName, imageUrl, isStudioRender, isHeroReference } = body;
 
     // Validate projectId
     if (typeof projectId !== "string" || !isValidRecordId(projectId)) {
@@ -71,6 +71,9 @@ export async function POST(request: Request) {
     };
     if (isStudioRender === true) {
       fields["Is Studio Render"] = true;
+    }
+    if (isHeroReference === true) {
+      fields["Is Hero Reference"] = true;
     }
     const record = await renderedViewsTable.create(fields);
 
@@ -122,6 +125,7 @@ export async function GET(request: Request) {
       imageUrl: record.get("Image URL") || "",
       isPhotorealistic: record.get("Is Photorealistic") === true,
       isStudioRender: record.get("Is Studio Render") === true,
+      isHeroReference: record.get("Is Hero Reference") === true,
     }));
 
     return NextResponse.json({ views });

@@ -8,6 +8,7 @@ import type { ThreeRefs } from "@/components/ModelViewerWrapper";
 import ViewCaptureWrapper from "@/components/ViewCaptureWrapper";
 import PhotorealisticRender from "@/components/PhotorealisticRender";
 import StudioRender from "@/components/StudioRender";
+import HeroRender from "@/components/HeroRender";
 import WizardContainer from "@/components/wizard/WizardContainer";
 import type { Project, RenderedView, SketchAnalysisResult } from "@/lib/types";
 import type * as THREE from "three";
@@ -85,6 +86,7 @@ export default function ProjectWorkspacePage() {
   const basicViews = useMemo(() => views.filter((v) => !v.isPhotorealistic && !v.isStudioRender), [views]);
   const photoViews = useMemo(() => views.filter((v) => v.isPhotorealistic), [views]);
   const studioViews = useMemo(() => views.filter((v) => v.isStudioRender), [views]);
+  const heroRefViews = useMemo(() => views.filter((v) => v.isHeroReference), [views]);
 
   // Predecessor capture state
   const [predecessorRenders, setPredecessorRenders] = useState<Array<{ viewName: string; imageUrl: string }>>([]);
@@ -1067,7 +1069,14 @@ export default function ProjectWorkspacePage() {
                 onStudioModeChange={setStudioMode}
               />
 
-              {/* AI photorealistic renders (optional) */}
+              {/* Hero reference renders (structured JSON prompting + style reference) */}
+              <HeroRender
+                projectId={projectId}
+                existingHeroUrl={project?.heroImageUrl || undefined}
+                existingRenders={heroRefViews}
+              />
+
+              {/* AI photorealistic renders (legacy - generic prompt) */}
               <PhotorealisticRender projectId={projectId} existingRenders={photoViews} />
 
               {/* Analysis section */}
@@ -1175,8 +1184,8 @@ export default function ProjectWorkspacePage() {
 
               {/* View thumbnails */}
               {views.length > 0 && (() => {
-                const displayViews = studioViews.length > 0 ? studioViews : photoViews.length > 0 ? photoViews : basicViews;
-                const label = studioViews.length > 0 ? "Studio Renders" : photoViews.length > 0 ? "Product Shots" : "Captured Views";
+                const displayViews = heroRefViews.length > 0 ? heroRefViews : studioViews.length > 0 ? studioViews : photoViews.length > 0 ? photoViews : basicViews;
+                const label = heroRefViews.length > 0 ? "Hero Reference Renders" : studioViews.length > 0 ? "Studio Renders" : photoViews.length > 0 ? "Product Shots" : "Captured Views";
                 return (
                   <div>
                     <p className="section-label mb-2">{label}</p>

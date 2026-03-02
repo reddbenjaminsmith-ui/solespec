@@ -121,6 +121,7 @@ export async function POST(request: Request) {
       sketchUrl: record.get("Sketch URL") || "",
       predecessorModelUrl: record.get("Predecessor Model URL") || "",
       sketchAnalysis: record.get("Sketch Analysis") || "",
+      heroImageUrl: record.get("Hero Image URL") || "",
     });
   } catch (error) {
     console.error(
@@ -186,6 +187,7 @@ export async function GET(request: Request) {
       sketchUrl: record.get("Sketch URL") || "",
       predecessorModelUrl: record.get("Predecessor Model URL") || "",
       sketchAnalysis: record.get("Sketch Analysis") || "",
+      heroImageUrl: record.get("Hero Image URL") || "",
     }));
 
     return NextResponse.json({ projects });
