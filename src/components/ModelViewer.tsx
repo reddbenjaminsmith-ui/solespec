@@ -28,26 +28,28 @@ interface ModelViewerProps {
 }
 
 /**
- * Test if the browser can create a WebGL context right now.
- * Creates a tiny test canvas, tries to get a context, then immediately
- * releases it so it doesn't count against the browser's context limit.
+ * Recursively dispose all GPU resources in a Three.js object tree.
+ * Call this before discarding a scene to prevent GPU memory leaks.
  */
-function probeWebGL(): boolean {
-  try {
-    const testCanvas = document.createElement("canvas");
-    testCanvas.width = 1;
-    testCanvas.height = 1;
-    const gl =
-      testCanvas.getContext("webgl2", { failIfMajorPerformanceCaveat: false }) ||
-      testCanvas.getContext("webgl", { failIfMajorPerformanceCaveat: false });
-    if (!gl) return false;
-    // Free the context immediately so it doesn't use a slot
-    const loseExt = gl.getExtension("WEBGL_lose_context");
-    if (loseExt) loseExt.loseContext();
-    return true;
-  } catch {
-    return false;
-  }
+function disposeScene(obj: THREE.Object3D): void {
+  obj.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.geometry?.dispose();
+      const materials = Array.isArray(child.material)
+        ? child.material
+        : [child.material];
+      for (const mat of materials) {
+        if (!mat) continue;
+        for (const key of Object.keys(mat)) {
+          const value = (mat as Record<string, unknown>)[key];
+          if (value instanceof THREE.Texture) {
+            value.dispose();
+          }
+        }
+        mat.dispose();
+      }
+    }
+  });
 }
 
 /* ── Pure renderer - runs INSIDE Canvas, no loading logic ── */
@@ -110,13 +112,15 @@ export default function ModelViewer({
 }: ModelViewerProps) {
   const [modelScene, setModelScene] = useState<THREE.Group | null>(null);
   const [status, setStatus] = useState<
-    "checking" | "loading" | "loaded" | "webgl-failed" | "error"
+    "checking" | "loading" | "loaded" | "error"
   >("checking");
   const [loadProgress, setLoadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
   const [retryKey, setRetryKey] = useState(0);
-  const [webglRetries, setWebglRetries] = useState(0);
+  const [contextLost, setContextLost] = useState(false);
   const controlsRef = useRef(null);
+  const sceneRef = useRef<THREE.Group | null>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
 
   // Pre-flight URL check - verify file is accessible before loading
   useEffect(() => {
@@ -179,14 +183,10 @@ export default function ModelViewer({
       modelUrl,
       (gltf) => {
         if (disposed) return;
+        sceneRef.current = gltf.scene;
         setModelScene(gltf.scene);
-        // Check WebGL availability before transitioning to "loaded"
-        if (probeWebGL()) {
-          setStatus("loaded");
-          onModelLoaded?.(gltf.scene);
-        } else {
-          setStatus("webgl-failed");
-        }
+        setStatus("loaded");
+        onModelLoaded?.(gltf.scene);
       },
       (event) => {
         if (disposed) return;
@@ -207,8 +207,51 @@ export default function ModelViewer({
     return () => {
       disposed = true;
       dracoLoader.dispose();
+      if (sceneRef.current) {
+        disposeScene(sceneRef.current);
+        sceneRef.current = null;
+      }
     };
   }, [status, modelUrl, onModelLoaded]);
+
+  // Handle WebGL context loss/restore gracefully
+  useEffect(() => {
+    if (status !== "loaded" || !canvasContainerRef.current) return;
+
+    const canvas = canvasContainerRef.current.querySelector("canvas");
+    if (!canvas) return;
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const handleContextLost = (e: Event) => {
+      e.preventDefault();
+      console.error("WebGL context lost");
+      setContextLost(true);
+      // If not restored within 10s, show error
+      timeoutId = setTimeout(() => {
+        setStatus("error");
+        setErrorMessage(
+          "Your browser's graphics context was lost and could not recover. Try restarting your browser."
+        );
+        setContextLost(false);
+      }, 10000);
+    };
+
+    const handleContextRestored = () => {
+      console.log("WebGL context restored");
+      if (timeoutId) clearTimeout(timeoutId);
+      setContextLost(false);
+    };
+
+    canvas.addEventListener("webglcontextlost", handleContextLost);
+    canvas.addEventListener("webglcontextrestored", handleContextRestored);
+
+    return () => {
+      canvas.removeEventListener("webglcontextlost", handleContextLost);
+      canvas.removeEventListener("webglcontextrestored", handleContextRestored);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [status]);
 
   // URL validation
   if (!modelUrl || modelUrl.trim() === "") {
@@ -234,61 +277,6 @@ export default function ModelViewer({
       <div className="w-full h-full min-h-[400px] rounded-xl bg-surface-900 flex items-center justify-center">
         <div className="text-center p-8">
           <p className="text-sm text-red-400">Invalid model URL format</p>
-        </div>
-      </div>
-    );
-  }
-
-  // WebGL unavailable - show specific message with actionable steps
-  if (status === "webgl-failed") {
-    return (
-      <div className="w-full h-full min-h-[400px] rounded-xl bg-surface-900 flex items-center justify-center">
-        <div className="text-center p-8 max-w-sm">
-          <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-amber-500/10 flex items-center justify-center">
-            <svg
-              className="w-6 h-6 text-amber-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={1.5}
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
-              />
-            </svg>
-          </div>
-          <p
-            className="text-sm font-medium text-white mb-2"
-            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-          >
-            3D graphics unavailable
-          </p>
-          <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-            Your browser has run out of graphics resources. This usually happens when too many tabs are open.
-            Close some other browser tabs, then click Retry.
-          </p>
-          <p className="text-[10px] text-slate-600 mb-4">
-            Attempt {webglRetries + 1}
-          </p>
-          <button
-            onClick={() => {
-              // Re-probe WebGL - maybe user closed some tabs
-              if (probeWebGL()) {
-                setStatus("loaded");
-                setWebglRetries(0);
-                if (modelScene) {
-                  onModelLoaded?.(modelScene);
-                }
-              } else {
-                setWebglRetries((r) => r + 1);
-              }
-            }}
-            className="btn-secondary px-5 py-2.5 rounded-xl text-sm"
-          >
-            Retry
-          </button>
         </div>
       </div>
     );
@@ -339,7 +327,20 @@ export default function ModelViewer({
 
   return (
     <ThreeErrorBoundary key={`${modelUrl}-${retryKey}`}>
-      <div className="relative w-full h-full min-h-[400px] rounded-xl overflow-hidden">
+      <div ref={canvasContainerRef} className="relative w-full h-full min-h-[400px] rounded-xl overflow-hidden">
+        {contextLost && (
+          <div className="absolute inset-0 flex items-center justify-center z-20 bg-surface-900/95">
+            <div className="text-center p-8">
+              <div className="w-10 h-10 mx-auto mb-3 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+              <p className="text-sm text-amber-300 mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                Graphics context interrupted
+              </p>
+              <p className="text-xs text-slate-500">
+                Waiting for the browser to restore the 3D context...
+              </p>
+            </div>
+          </div>
+        )}
         {status !== "loaded" && (
           <div className="absolute inset-0 flex items-center justify-center z-10 bg-surface-900/90">
             <div className="text-center">
