@@ -141,6 +141,10 @@ export default function ProjectWorkspacePage() {
             // actual visual reference of the 3D form and proportions
             setPhase("predecessor-capture");
           }
+        } else if (fetchedViewCount >= 7) {
+          // 3D model with views already captured - go to analysis
+          setCaptureComplete(true);
+          setPhase("analysis");
         }
       } catch {
         setError("Failed to load project");
