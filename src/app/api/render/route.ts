@@ -105,7 +105,7 @@ export async function POST(request: Request) {
                 },
               ],
               config: {
-                responseModalities: ["image", "text"],
+                responseModalities: ["TEXT", "IMAGE"],
               },
             });
 

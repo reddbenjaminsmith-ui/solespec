@@ -113,7 +113,7 @@ export async function POST(request: Request) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             messages: componentMessages as any,
             response_format: { type: "json_object" },
-            max_tokens: 4096,
+            max_completion_tokens: 4096,
           });
 
           const componentRaw =
@@ -179,7 +179,7 @@ export async function POST(request: Request) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             messages: measurementMessages as any,
             response_format: { type: "json_object" },
-            max_tokens: 2048,
+            max_completion_tokens: 2048,
           });
 
           const measurementRaw =
