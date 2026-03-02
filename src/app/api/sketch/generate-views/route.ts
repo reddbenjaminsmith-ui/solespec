@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { projectsTable, renderedViewsTable, isValidRecordId } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
-import { getOpenAI } from "@/lib/ai/openai";
+import { getOpenAI, OPENAI_MODEL } from "@/lib/ai/openai";
 import { put } from "@vercel/blob";
-import { VIEW_CONFIGS, MULTI_VIEW_GENERATION_PROMPT } from "@/lib/ai/sketch-prompts";
+import { VIEW_CONFIGS, buildPredecessorViewPromptMessages } from "@/lib/ai/sketch-prompts";
 
 // Intentionally public - no auth check yet. Will be gated behind authentication in a future phase.
 
@@ -19,7 +19,22 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { projectId } = body;
+    const { projectId, predecessorViews } = body;
+
+    // Validate predecessorViews if provided
+    const validPredecessorViews: Array<{ viewName: string; imageUrl: string }> = [];
+    if (Array.isArray(predecessorViews)) {
+      for (const pv of predecessorViews) {
+        if (typeof pv.viewName === "string" && typeof pv.imageUrl === "string") {
+          try {
+            const url = new URL(pv.imageUrl);
+            if (url.protocol === "https:" || url.protocol === "http:") {
+              validPredecessorViews.push({ viewName: pv.viewName, imageUrl: pv.imageUrl });
+            }
+          } catch { /* skip invalid URLs */ }
+        }
+      }
+    }
 
     // Validate projectId
     if (typeof projectId !== "string" || !isValidRecordId(projectId)) {
@@ -41,7 +56,6 @@ export async function POST(request: Request) {
     }
 
     const sketchUrl = project.get("Sketch URL") as string;
-    const predecessorModelUrl = project.get("Predecessor Model URL") as string;
 
     if (!sketchUrl) {
       return NextResponse.json(
@@ -92,25 +106,63 @@ export async function POST(request: Request) {
             recordId: lateralRecord.getId(),
           });
 
-          // Generate additional views
+          // Generate additional views using two-step pipeline:
+          // Step 1: GPT-5.2 Vision analyzes sketch + predecessor render to create detailed prompt
+          // Step 2: gpt-image-1.5 generates from that informed prompt
           for (let i = 0; i < VIEW_CONFIGS.length; i++) {
             const config = VIEW_CONFIGS[i];
 
-            sendEvent("status", {
-              step: `generating_${config.viewName}`,
-              message: `Generating ${config.viewName} view (${i + 1}/${VIEW_CONFIGS.length})...`,
-            });
-
-            const prompt = MULTI_VIEW_GENERATION_PROMPT
-              .replace("{viewName}", config.viewName)
-              .replace("{viewName}", config.viewName)
-              .replace("{viewAngle}", config.viewAngle);
+            // Map view names for predecessor lookup
+            const predecessorViewName =
+              config.viewName === "medial" ? "left" : config.viewName === "three_quarter" ? "three_quarter" : config.viewName;
+            const predecessorView = validPredecessorViews.find(
+              (pv) => pv.viewName === predecessorViewName || pv.viewName === config.viewName
+            );
 
             try {
-              // Use gpt-image-1.5 to generate the view
+              let imagePrompt: string;
+
+              if (predecessorView) {
+                // Two-step pipeline: GPT-5.2 creates informed prompt from both images
+                sendEvent("status", {
+                  step: `analyzing_${config.viewName}`,
+                  message: `Analyzing predecessor + sketch for ${config.viewName} view (${i + 1}/${VIEW_CONFIGS.length})...`,
+                });
+
+                const promptMessages = buildPredecessorViewPromptMessages(
+                  sketchUrl,
+                  predecessorView.imageUrl,
+                  config.viewName,
+                  config.viewAngle
+                );
+
+                const promptCompletion = await openai.chat.completions.create({
+                  model: OPENAI_MODEL,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  messages: promptMessages as any,
+                  max_tokens: 1024,
+                });
+
+                imagePrompt = promptCompletion.choices[0]?.message?.content || "";
+
+                if (!imagePrompt || imagePrompt.length < 50) {
+                  // Fallback to basic prompt if GPT-5.2 returned too little
+                  imagePrompt = `Technical footwear illustration of a shoe from the ${config.viewName} angle (${config.viewAngle}). Clean lines, white background, show all component boundaries clearly. Maintain proper shoe proportions.`;
+                }
+              } else {
+                // No predecessor render available - use basic prompt
+                imagePrompt = `Technical footwear illustration of a shoe from the ${config.viewName} angle (${config.viewAngle}). Clean lines, white background, show all component boundaries clearly. The shoe design features the panel lines and components from the original lateral sketch. Maintain proper shoe proportions.`;
+              }
+
+              sendEvent("status", {
+                step: `generating_${config.viewName}`,
+                message: `Generating ${config.viewName} view (${i + 1}/${VIEW_CONFIGS.length})...`,
+              });
+
+              // Step 2: gpt-image-1.5 generates from the detailed prompt
               const response = await openai.images.generate({
                 model: "gpt-image-1.5",
-                prompt: `${prompt}\n\nThe shoe is visible in the reference sketch image I described. Generate ONLY the shoe from the ${config.viewName} angle. Technical footwear illustration style, white background, clean lines showing all component boundaries.${predecessorModelUrl ? " Use the predecessor model proportions." : ""}`,
+                prompt: imagePrompt,
                 n: 1,
                 size: "1024x1024",
                 quality: "high",

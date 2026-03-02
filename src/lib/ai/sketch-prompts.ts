@@ -53,28 +53,37 @@ Requirements:
 This is for a footwear tech pack - accuracy of component boundaries and proportions matters more than artistic flair.`;
 
 export function buildSketchAnalysisMessages(
-  sketchUrl: string
+  sketchUrl: string,
+  predecessorLateralUrl?: string
 ): Array<{
   role: "system" | "user";
   content:
     | string
     | Array<{ type: string; text?: string; image_url?: { url: string } }>;
 }> {
+  const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+    {
+      type: "text",
+      text: predecessorLateralUrl
+        ? "Analyze this lateral (side view) shoe sketch. The second image is a render of the predecessor 3D model from the same angle - compare proportions and note differences. Identify all components, panel lines, and design elements."
+        : "Analyze this lateral (side view) shoe sketch. Identify all components, panel lines, and design elements.",
+    },
+    {
+      type: "image_url",
+      image_url: { url: sketchUrl },
+    },
+  ];
+
+  if (predecessorLateralUrl) {
+    userContent.push({
+      type: "image_url",
+      image_url: { url: predecessorLateralUrl },
+    });
+  }
+
   return [
     { role: "system", content: SKETCH_ANALYSIS_SYSTEM_PROMPT },
-    {
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: "Analyze this lateral (side view) shoe sketch. Identify all components, panel lines, and design elements.",
-        },
-        {
-          type: "image_url",
-          image_url: { url: sketchUrl },
-        },
-      ],
-    },
+    { role: "user", content: userContent },
   ];
 }
 
@@ -93,6 +102,63 @@ export function parseSketchAnalysisResponse(raw: string): SketchAnalysisResult {
     constructionNotes: parsed.constructionNotes || "",
     styleDescription: parsed.styleDescription || "",
   };
+}
+
+// System prompt for GPT-5.2 Vision to create detailed prompts from sketch + predecessor render
+export const PREDECESSOR_VIEW_PROMPT_SYSTEM = `You are a footwear design AI creating image generation prompts. You will see two images:
+
+1. A 2D lateral sketch of a shoe design (showing panel lines, components, design details)
+2. A 3D render of the predecessor model from a specific angle (showing correct proportions and form)
+
+Write an extremely detailed prompt (200-300 words) for an AI image generator to create a new view of this shoe.
+
+The generated image MUST:
+- Match the EXACT PROPORTIONS and SILHOUETTE of the predecessor 3D render (sole thickness, toe box shape, heel height, arch curve, overall form factor)
+- Apply ALL DESIGN ELEMENTS from the 2D sketch (panel lines, overlays, component boundaries, perforations, textures, stitching, branding)
+- Be a clean technical footwear illustration on a white background
+- Show all component boundaries as clear lines
+- Use consistent line weight and shading
+
+Be extremely specific about:
+- The exact silhouette shape (trace the outline from the predecessor)
+- Panel line positions, curves, and intersections (from the sketch)
+- Component locations and their boundaries
+- Design details: perforations, textures, hardware, logos
+- View angle and how components wrap around the form
+
+Write ONLY the image generation prompt. No explanations.`;
+
+export function buildPredecessorViewPromptMessages(
+  sketchUrl: string,
+  predecessorViewUrl: string,
+  viewName: string,
+  viewAngle: string
+): Array<{
+  role: "system" | "user";
+  content:
+    | string
+    | Array<{ type: string; text?: string; image_url?: { url: string } }>;
+}> {
+  return [
+    { role: "system", content: PREDECESSOR_VIEW_PROMPT_SYSTEM },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: `Create a detailed image generation prompt for the ${viewName} view (${viewAngle}). Image 1 is the design sketch. Image 2 is the predecessor 3D model from this angle - use its exact proportions and form. The generated shoe must have the predecessor's silhouette with the sketch's design applied to it.`,
+        },
+        {
+          type: "image_url",
+          image_url: { url: sketchUrl },
+        },
+        {
+          type: "image_url",
+          image_url: { url: predecessorViewUrl },
+        },
+      ],
+    },
+  ];
 }
 
 export const VIEW_CONFIGS = [

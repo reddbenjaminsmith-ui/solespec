@@ -13,8 +13,28 @@ import type * as THREE from "three";
 import { CAMERA_POSITIONS } from "@/lib/three/camera-positions";
 import type { TechnicalView } from "@/lib/constants";
 import { useSSEStream } from "@/lib/useSSEStream";
+import { upload } from "@vercel/blob/client";
+import {
+  extractDimensions,
+  calculateCameraDistance,
+} from "@/lib/three/extract-dimensions";
 
-type WorkspacePhase = "sketch-analysis" | "sketch-views" | "capture" | "analysis" | "wizard" | "complete";
+// Views to capture from the predecessor model
+const PREDECESSOR_CAPTURE_VIEWS: TechnicalView[] = ["right", "left", "front", "back", "three_quarter"];
+
+function waitFrames(count: number): Promise<void> {
+  return new Promise((resolve) => {
+    let remaining = count;
+    function tick() {
+      remaining--;
+      if (remaining <= 0) resolve();
+      else requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+type WorkspacePhase = "predecessor-capture" | "sketch-analysis" | "sketch-views" | "capture" | "analysis" | "wizard" | "complete";
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -56,6 +76,12 @@ export default function ProjectWorkspacePage() {
   const [viewGenError, setViewGenError] = useState("");
   const { start: startSketchSSE, isStreaming: analyzingSketch } = useSSEStream();
   const { start: startViewGenSSE, isStreaming: generatingViews } = useSSEStream();
+
+  // Predecessor capture state
+  const [predecessorRenders, setPredecessorRenders] = useState<Array<{ viewName: string; imageUrl: string }>>([]);
+  const [predecessorCaptureStatus, setPredecessorCaptureStatus] = useState("");
+  const [predecessorCaptureError, setPredecessorCaptureError] = useState("");
+  const [capturingPredecessor, setCapturingPredecessor] = useState(false);
 
   // Fetch project + existing views
   useEffect(() => {
@@ -100,19 +126,20 @@ export default function ProjectWorkspacePage() {
           setWizardStep(1);
           setCaptureComplete(true);
         } else if (data.sourceType === "Sketch") {
-          // Sketch workflow: determine where to resume
+          // Sketch workflow: parse existing analysis if available
           if (data.sketchAnalysis) {
             try {
               setSketchAnalysisResult(JSON.parse(data.sketchAnalysis));
             } catch { /* ignore parse error */ }
           }
           if (fetchedViewCount >= 5) {
+            // Views already generated - go to component analysis
             setCaptureComplete(true);
             setPhase("analysis");
-          } else if (data.sketchAnalysis) {
-            setPhase("sketch-views");
           } else {
-            setPhase("sketch-analysis");
+            // Need predecessor captures first - they provide the AI with
+            // actual visual reference of the 3D form and proportions
+            setPhase("predecessor-capture");
           }
         }
       } catch {
@@ -132,6 +159,84 @@ export default function ProjectWorkspacePage() {
     setThreeRefs(refs);
     setModelReady(true);
   }, []);
+
+  // Capture predecessor model from 5 angles for AI reference
+  const capturePredecessorViews = useCallback(async () => {
+    if (capturingPredecessor || !threeRefs || !modelScene) return;
+    setCapturingPredecessor(true);
+    setPredecessorCaptureError("");
+    setPredecessorCaptureStatus("Capturing reference model...");
+
+    const { camera, gl, controls, scene, canvas } = threeRefs;
+    const dims = extractDimensions(modelScene);
+    const distance = calculateCameraDistance(dims);
+    const captures: Array<{ viewName: string; imageUrl: string }> = [];
+
+    try {
+      for (let i = 0; i < PREDECESSOR_CAPTURE_VIEWS.length; i++) {
+        const viewName = PREDECESSOR_CAPTURE_VIEWS[i];
+        const camPos = CAMERA_POSITIONS[viewName];
+        setPredecessorCaptureStatus(`Capturing ${camPos.label} (${i + 1}/${PREDECESSOR_CAPTURE_VIEWS.length})...`);
+
+        const scale = distance / 3;
+        const cam = camera as unknown as { position: { set: (x: number, y: number, z: number) => void }; lookAt: (x: number, y: number, z: number) => void };
+        cam.position.set(
+          camPos.position[0] * scale + dims.center.x,
+          camPos.position[1] * scale + dims.center.y,
+          camPos.position[2] * scale + dims.center.z
+        );
+        cam.lookAt(dims.center.x, dims.center.y, dims.center.z);
+
+        if (controls && typeof controls === "object" && "target" in controls) {
+          const ctrl = controls as { target: { set: (x: number, y: number, z: number) => void }; update: () => void };
+          ctrl.target.set(dims.center.x, dims.center.y, dims.center.z);
+          ctrl.update();
+        }
+
+        const renderer = gl as unknown as { render: (scene: unknown, camera: unknown) => void };
+        renderer.render(scene, cam);
+        await waitFrames(3);
+
+        const dataUrl = canvas.toDataURL("image/png");
+        const fetchRes = await fetch(dataUrl);
+        const imageBlob = await fetchRes.blob();
+
+        const uploadResult = await upload(
+          `predecessor-views/${projectId}/${viewName}.png`,
+          imageBlob,
+          { access: "public", handleUploadUrl: "/api/upload/token" }
+        );
+
+        captures.push({ viewName, imageUrl: uploadResult.url });
+      }
+
+      setPredecessorRenders(captures);
+      setPredecessorCaptureStatus("Reference captures ready");
+
+      // Transition to the right sketch phase
+      if (sketchAnalysisResult) {
+        setPhase("sketch-views");
+      } else {
+        setPhase("sketch-analysis");
+      }
+    } catch (err) {
+      console.error(
+        "Predecessor capture failed:",
+        err instanceof Error ? err.message : "Unknown error"
+      );
+      setPredecessorCaptureError("Failed to capture reference model. Please try again.");
+    } finally {
+      setCapturingPredecessor(false);
+    }
+  }, [capturingPredecessor, threeRefs, modelScene, projectId, sketchAnalysisResult]);
+
+  // Auto-trigger predecessor capture when model is ready
+  useEffect(() => {
+    if (phase === "predecessor-capture" && modelReady && threeRefs && modelScene && !capturingPredecessor && predecessorRenders.length === 0) {
+      const timer = setTimeout(() => capturePredecessorViews(), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [phase, modelReady, threeRefs, modelScene, capturingPredecessor, predecessorRenders.length, capturePredecessorViews]);
 
   const handleCaptureComplete = useCallback(
     (capturedViews: RenderedView[]) => {
@@ -211,9 +316,10 @@ export default function ProjectWorkspacePage() {
     setSketchError("");
     setSketchAnalysisResult(null);
 
+    const lateralRender = predecessorRenders.find(v => v.viewName === "right");
     startSketchSSE(
       "/api/sketch/analyze",
-      { projectId },
+      { projectId, predecessorLateralUrl: lateralRender?.imageUrl },
       {
         onEvent: (event, data) => {
           const d = data as Record<string, unknown>;
@@ -238,7 +344,7 @@ export default function ProjectWorkspacePage() {
         },
       }
     );
-  }, [projectId, startSketchSSE]);
+  }, [projectId, startSketchSSE, predecessorRenders]);
 
   // View generation handler
   const handleStartViewGeneration = useCallback(() => {
@@ -248,7 +354,7 @@ export default function ProjectWorkspacePage() {
 
     startViewGenSSE(
       "/api/sketch/generate-views",
-      { projectId },
+      { projectId, predecessorViews: predecessorRenders },
       {
         onEvent: (event, data) => {
           const d = data as Record<string, unknown>;
@@ -285,7 +391,7 @@ export default function ProjectWorkspacePage() {
         },
       }
     );
-  }, [projectId, startViewGenSSE]);
+  }, [projectId, startViewGenSSE, predecessorRenders]);
 
   // Transition from sketch-analysis to sketch-views and start generation
   const handleGenerateViews = useCallback(() => {
@@ -296,7 +402,7 @@ export default function ProjectWorkspacePage() {
 
     startViewGenSSE(
       "/api/sketch/generate-views",
-      { projectId },
+      { projectId, predecessorViews: predecessorRenders },
       {
         onEvent: (event, data) => {
           const d = data as Record<string, unknown>;
@@ -333,7 +439,7 @@ export default function ProjectWorkspacePage() {
         },
       }
     );
-  }, [projectId, startViewGenSSE]);
+  }, [projectId, startViewGenSSE, predecessorRenders]);
 
   // Transition from sketch-views to analysis
   const handleSketchContinue = useCallback(() => {
@@ -463,7 +569,13 @@ export default function ProjectWorkspacePage() {
         {/* Left: Sketch Image or 3D Viewer */}
         <div className="lg:w-[60%] p-4 lg:p-6">
           <div className="h-[50vh] lg:h-full rounded-2xl overflow-hidden border border-white/[0.06]">
-            {(phase === "sketch-analysis" || phase === "sketch-views") && project.sketchUrl ? (
+            {phase === "predecessor-capture" && project.modelUrl ? (
+              <ModelViewerWrapper
+                modelUrl={project.modelUrl}
+                onModelLoaded={handleModelLoaded}
+                onReady={handleThreeReady}
+              />
+            ) : (phase === "sketch-analysis" || phase === "sketch-views") && project.sketchUrl ? (
               <div className="w-full h-full flex items-center justify-center bg-surface-900/80 p-6">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -488,6 +600,52 @@ export default function ProjectWorkspacePage() {
 
         {/* Right panel - changes based on phase */}
         <div className="lg:w-[40%] p-4 lg:p-6 lg:pl-0 flex flex-col gap-4">
+          {/* Phase: Predecessor Capture */}
+          {phase === "predecessor-capture" && (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center p-8">
+                {predecessorCaptureError ? (
+                  <>
+                    <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-red-500/10 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm text-red-400 mb-3">{predecessorCaptureError}</p>
+                    <button
+                      onClick={() => {
+                        setPredecessorCaptureError("");
+                        capturePredecessorViews();
+                      }}
+                      className="btn-secondary px-4 py-2 rounded-xl text-sm"
+                    >
+                      Retry Capture
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-10 h-10 mx-auto mb-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+                    <h3
+                      className="text-sm font-semibold text-white mb-1"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    >
+                      Preparing Reference Model
+                    </h3>
+                    <p className="text-xs text-slate-500 mb-2">
+                      Capturing predecessor from multiple angles so AI can match proportions
+                    </p>
+                    <p
+                      className="text-xs text-cyan-400"
+                      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                    >
+                      {predecessorCaptureStatus || "Loading 3D model..."}
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Phase: Sketch Analysis */}
           {phase === "sketch-analysis" && (
             <>

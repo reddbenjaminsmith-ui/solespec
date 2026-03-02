@@ -21,7 +21,18 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { projectId } = body;
+    const { projectId, predecessorLateralUrl } = body;
+
+    // Validate predecessorLateralUrl if provided
+    let validPredecessorUrl: string | undefined;
+    if (typeof predecessorLateralUrl === "string" && predecessorLateralUrl.length > 0) {
+      try {
+        const url = new URL(predecessorLateralUrl);
+        if (url.protocol === "https:" || url.protocol === "http:") {
+          validPredecessorUrl = predecessorLateralUrl;
+        }
+      } catch { /* skip invalid URL */ }
+    }
 
     // Validate projectId
     if (typeof projectId !== "string" || !isValidRecordId(projectId)) {
@@ -68,7 +79,7 @@ export async function POST(request: Request) {
             message: "Analyzing sketch design...",
           });
 
-          const messages = buildSketchAnalysisMessages(sketchUrl);
+          const messages = buildSketchAnalysisMessages(sketchUrl, validPredecessorUrl);
           const completion = await getOpenAI().chat.completions.create({
             model: OPENAI_MODEL,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
