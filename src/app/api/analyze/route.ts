@@ -218,26 +218,31 @@ export async function POST(request: Request) {
             count: measurementData.measurements.length,
           });
 
-          // Save measurements to Airtable
-          const measurementRecords = await measurementsTable.create(
-            measurementData.measurements.map((m) => ({
-              fields: {
-                Name: m.name.substring(0, 200),
-                "Value MM": Number.isFinite(m.valueMm)
-                  ? Math.max(0, m.valueMm)
-                  : 0,
-                "AI Estimated": true,
-                Confirmed: false,
-                "Size Reference":
-                  measurementData.referenceSize.substring(0, 200),
-                Project: [projectId],
-              },
-            }))
-          );
+          // Save measurements to Airtable (batch of 10)
+          const savedMeasurementIds: string[] = [];
+          for (let i = 0; i < measurementData.measurements.length; i += 10) {
+            const batch = measurementData.measurements.slice(i, i + 10);
+            const records = await measurementsTable.create(
+              batch.map((m) => ({
+                fields: {
+                  Name: m.name.substring(0, 200),
+                  "Value MM": Number.isFinite(m.valueMm)
+                    ? Math.max(0, m.valueMm)
+                    : 0,
+                  "AI Estimated": true,
+                  Confirmed: false,
+                  "Size Reference":
+                    measurementData.referenceSize.substring(0, 200),
+                  Project: [projectId],
+                },
+              }))
+            );
+            savedMeasurementIds.push(...records.map((r) => r.getId()));
+          }
 
           sendEvent("status", {
             step: "measurements_saved",
-            message: `Saved ${measurementRecords.length} measurements`,
+            message: `Saved ${savedMeasurementIds.length} measurements`,
           });
 
           // Update project status and wizard step
@@ -248,7 +253,7 @@ export async function POST(request: Request) {
 
           sendEvent("complete", {
             componentCount: savedComponentIds.length,
-            measurementCount: measurementRecords.length,
+            measurementCount: savedMeasurementIds.length,
             shoeType: componentData.shoeType,
             constructionGuess: componentData.constructionGuess,
           });
@@ -294,11 +299,8 @@ export async function POST(request: Request) {
             clientMessage = "AI provider is temporarily unavailable. Try again in a moment.";
           }
 
-          // Include debug info to diagnose production failures
-          const debugInfo = `[${errName}:${errStatus || "no-status"}/${errCode || "no-code"}] ${errMsg.substring(0, 200)}`;
-
           sendEvent("error", {
-            message: `${clientMessage} Debug: ${debugInfo}`,
+            message: clientMessage,
           });
         }
 
