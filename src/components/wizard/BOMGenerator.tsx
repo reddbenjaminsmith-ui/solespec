@@ -23,6 +23,7 @@ export default function BOMGenerator({ projectId, onStepComplete }: BOMGenerator
   const [existingIds, setExistingIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   // Load existing BOM items
   useEffect(() => {
@@ -99,7 +100,7 @@ export default function BOMGenerator({ projectId, onStepComplete }: BOMGenerator
 
       setItems(generated);
     } catch {
-      // Silent fail
+      setSaveError("Failed to generate BOM from components. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -132,14 +133,25 @@ export default function BOMGenerator({ projectId, onStepComplete }: BOMGenerator
     if (validItems.length === 0) return;
 
     setSaving(true);
+    setSaveError("");
     try {
-      // Delete existing items first
+      // Delete existing items first - track failures
+      let deleteFailed = false;
       for (const id of existingIds) {
-        await fetch("/api/bom", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id }),
-        });
+        try {
+          await fetch("/api/bom", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+          });
+        } catch {
+          deleteFailed = true;
+        }
+      }
+      if (deleteFailed) {
+        setSaveError("Failed to update some items. Please try again.");
+        setSaving(false);
+        return;
       }
 
       // Create all new items
@@ -166,7 +178,7 @@ export default function BOMGenerator({ projectId, onStepComplete }: BOMGenerator
         onStepComplete();
       }
     } catch {
-      // Silent fail
+      setSaveError("Failed to save BOM. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -182,6 +194,11 @@ export default function BOMGenerator({ projectId, onStepComplete }: BOMGenerator
 
   return (
     <div className="flex flex-col gap-4">
+      {saveError && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-300">
+          {saveError}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h3

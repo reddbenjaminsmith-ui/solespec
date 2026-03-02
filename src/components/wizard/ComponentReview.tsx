@@ -71,6 +71,7 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
   const viewComponents = components.filter((c) => c.bestView === selectedView);
 
   const handleConfirm = useCallback(async (id: string) => {
+    setSaveError("");
     try {
       const res = await fetch("/api/components", {
         method: "PATCH",
@@ -81,11 +82,12 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
         setComponents((prev) => prev.map((c) => (c.id === id ? { ...c, confirmed: true } : c)));
       }
     } catch {
-      // Silent fail
+      setSaveError("Failed to confirm component. Please try again.");
     }
   }, []);
 
   const handleDelete = useCallback(async (id: string) => {
+    setSaveError("");
     try {
       const res = await fetch("/api/components", {
         method: "DELETE",
@@ -96,7 +98,7 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
         setComponents((prev) => prev.filter((c) => c.id !== id));
       }
     } catch {
-      // Silent fail
+      setSaveError("Failed to delete component. Please try again.");
     }
   }, []);
 
@@ -108,6 +110,7 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
 
   const saveEdit = useCallback(async () => {
     if (!editingId || !editName.trim()) return;
+    setSaveError("");
     try {
       const res = await fetch("/api/components", {
         method: "PATCH",
@@ -122,13 +125,14 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
         );
       }
     } catch {
-      // Silent fail
+      setSaveError("Failed to save edit. Please try again.");
     }
     setEditingId(null);
   }, [editingId, editName, editCategory]);
 
   const handleAddComponent = useCallback(async () => {
     if (!newName.trim()) return;
+    setSaveError("");
     try {
       const res = await fetch("/api/components", {
         method: "POST",
@@ -154,7 +158,7 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
         }
       }
     } catch {
-      // Silent fail
+      setSaveError("Failed to add component. Please try again.");
     }
     setNewName("");
     setNewCategory("upper");
@@ -199,6 +203,11 @@ export default function ComponentReview({ projectId, onStepComplete }: Component
 
   return (
     <div className="flex flex-col gap-4">
+      {saveError && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-300">
+          {saveError}
+        </div>
+      )}
       {/* View selector */}
       <div className="flex gap-2 overflow-x-auto pb-2">
         {views.map((view) => {

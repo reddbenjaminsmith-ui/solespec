@@ -16,6 +16,7 @@ export default function ConstructionWizard({ projectId, onStepComplete }: Constr
   const [adhesiveNotes, setAdhesiveNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   // Load existing specs
   useEffect(() => {
@@ -56,6 +57,7 @@ export default function ConstructionWizard({ projectId, onStepComplete }: Constr
   const handleSave = useCallback(async () => {
     if (!selectedMethod) return;
     setSaving(true);
+    setSaveError("");
 
     // Build additional notes with stitching/adhesive
     const parts: string[] = [];
@@ -99,7 +101,7 @@ export default function ConstructionWizard({ projectId, onStepComplete }: Constr
       }
       onStepComplete();
     } catch {
-      // Silent fail
+      setSaveError("Failed to save construction method. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -115,6 +117,11 @@ export default function ConstructionWizard({ projectId, onStepComplete }: Constr
 
   return (
     <div className="flex flex-col gap-5">
+      {saveError && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-300">
+          {saveError}
+        </div>
+      )}
       <div>
         <h3
           className="text-sm font-semibold text-white mb-1"

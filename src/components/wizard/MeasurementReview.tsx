@@ -26,6 +26,7 @@ export default function MeasurementReview({ projectId, onStepComplete }: Measure
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState({ current: 0, total: 0 });
+  const [saveError, setSaveError] = useState("");
 
   // Load data
   useEffect(() => {
@@ -72,8 +73,10 @@ export default function MeasurementReview({ projectId, onStepComplete }: Measure
 
   const handleConfirmAll = useCallback(async () => {
     setSaving(true);
+    setSaveError("");
     const total = measurements.length;
     setSaveProgress({ current: 0, total });
+    let hadError = false;
 
     for (let i = 0; i < measurements.length; i++) {
       const m = measurements[i];
@@ -90,8 +93,12 @@ export default function MeasurementReview({ projectId, onStepComplete }: Measure
           }),
         });
       } catch {
-        // Continue with next
+        hadError = true;
       }
+    }
+
+    if (hadError) {
+      setSaveError("Some measurements failed to save. Please try again.");
     }
 
     setMeasurements((prev) =>
@@ -125,6 +132,11 @@ export default function MeasurementReview({ projectId, onStepComplete }: Measure
 
   return (
     <div className="flex flex-col gap-4">
+      {saveError && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-300">
+          {saveError}
+        </div>
+      )}
       {/* Reference size */}
       <div className="flex items-center justify-between">
         <label className="section-label">Reference Size</label>

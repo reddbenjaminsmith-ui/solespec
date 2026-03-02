@@ -35,6 +35,7 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
   const [formData, setFormData] = useState<MaterialFormData>(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   // Load data
   useEffect(() => {
@@ -80,6 +81,7 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
 
   const handleSave = useCallback(async () => {
     setSaving(true);
+    setSaveError("");
     try {
       if (existingSpecs) {
         // Update existing
@@ -102,7 +104,7 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
       }
       onStepComplete();
     } catch {
-      // Silent fail
+      setSaveError("Failed to save materials. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -132,6 +134,11 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
 
   return (
     <div className="flex flex-col gap-5">
+      {saveError && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-300">
+          {saveError}
+        </div>
+      )}
       {/* Upper materials */}
       {hasUpper && (
         <section>
