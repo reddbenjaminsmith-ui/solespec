@@ -31,7 +31,7 @@ export default function WizardStepper({ currentStep, onStepClick }: WizardSteppe
                 disabled={isFuture || isActive}
                 className={`
                   flex flex-col items-center gap-1.5 group relative
-                  ${isCompleted ? "cursor-pointer" : "cursor-default"}
+                  ${isCompleted ? "cursor-pointer" : isFuture ? "cursor-not-allowed opacity-40" : "cursor-default"}
                 `}
               >
                 <div

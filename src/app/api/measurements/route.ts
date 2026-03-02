@@ -138,6 +138,7 @@ export async function GET(request: Request) {
     const records = await measurementsTable
       .select({
         filterByFormula: `FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0`,
+        maxRecords: 100,
       })
       .all();
 

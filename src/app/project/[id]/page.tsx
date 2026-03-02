@@ -264,6 +264,7 @@ export default function ProjectWorkspacePage() {
 
   // Start AI analysis
   const handleStartAnalysis = useCallback(() => {
+    if (analyzing) return; // Prevent duplicate streams
     setAnalysisStatus("Starting analysis...");
     setAnalysisError("");
     setAnalysisSummary(null);
@@ -308,10 +309,11 @@ export default function ProjectWorkspacePage() {
         },
       }
     );
-  }, [projectId, startSSE]);
+  }, [analyzing, projectId, startSSE]);
 
   // Sketch analysis handler
   const handleStartSketchAnalysis = useCallback(() => {
+    if (analyzingSketch) return; // Prevent duplicate streams
     setSketchStatus("Starting sketch analysis...");
     setSketchError("");
     setSketchAnalysisResult(null);
@@ -344,10 +346,11 @@ export default function ProjectWorkspacePage() {
         },
       }
     );
-  }, [projectId, startSketchSSE, predecessorRenders]);
+  }, [analyzingSketch, projectId, startSketchSSE, predecessorRenders]);
 
   // View generation handler
   const handleStartViewGeneration = useCallback(() => {
+    if (generatingViews) return; // Prevent duplicate streams
     setViewGenStatus("Starting view generation...");
     setViewGenError("");
     setGeneratedViews([]);
@@ -391,10 +394,11 @@ export default function ProjectWorkspacePage() {
         },
       }
     );
-  }, [projectId, startViewGenSSE, predecessorRenders]);
+  }, [generatingViews, projectId, startViewGenSSE, predecessorRenders]);
 
   // Transition from sketch-analysis to sketch-views and start generation
   const handleGenerateViews = useCallback(() => {
+    if (generatingViews) return; // Prevent duplicate streams
     setPhase("sketch-views");
     setViewGenStatus("Starting view generation...");
     setViewGenError("");
@@ -439,7 +443,7 @@ export default function ProjectWorkspacePage() {
         },
       }
     );
-  }, [projectId, startViewGenSSE, predecessorRenders]);
+  }, [generatingViews, projectId, startViewGenSSE, predecessorRenders]);
 
   // Transition from sketch-views to analysis
   const handleSketchContinue = useCallback(() => {
@@ -569,9 +573,9 @@ export default function ProjectWorkspacePage() {
         {/* Left: Sketch Image or 3D Viewer */}
         <div className="lg:w-[60%] p-4 lg:p-6">
           <div className="h-[50vh] lg:h-full rounded-2xl overflow-hidden border border-white/[0.06]">
-            {phase === "predecessor-capture" && project.modelUrl ? (
+            {phase === "predecessor-capture" && (project.predecessorModelUrl || project.modelUrl) ? (
               <ModelViewerWrapper
-                modelUrl={project.modelUrl}
+                modelUrl={project.predecessorModelUrl || project.modelUrl}
                 onModelLoaded={handleModelLoaded}
                 onReady={handleThreeReady}
               />

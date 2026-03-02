@@ -32,8 +32,8 @@ export default function ConstructionWizard({ projectId, onStepComplete }: Constr
             }
             // Parse additional notes for stitching/adhesive
             const notes = data.specifications.additionalNotes || "";
-            const stitchMatch = notes.match(/Stitching: (.+?)(?:\n|$)/);
-            const adhesiveMatch = notes.match(/Adhesive: (.+?)(?:\n|$)/);
+            const stitchMatch = notes.match(/^[Ss]titching:\s*(.+?)$/m);
+            const adhesiveMatch = notes.match(/^[Aa]dhesive:\s*(.+?)$/m);
             if (stitchMatch) setStitchingType(stitchMatch[1]);
             if (adhesiveMatch) setAdhesiveNotes(adhesiveMatch[1]);
           }
@@ -66,8 +66,8 @@ export default function ConstructionWizard({ projectId, onStepComplete }: Constr
     // Preserve any existing notes that aren't stitching/adhesive
     if (existingSpecs?.additionalNotes) {
       const existing = existingSpecs.additionalNotes
-        .replace(/Stitching: .+?(\n|$)/g, "")
-        .replace(/Adhesive: .+?(\n|$)/g, "")
+        .replace(/^[Ss]titching:\s*.+?$/gm, "")
+        .replace(/^[Aa]dhesive:\s*.+?$/gm, "")
         .trim();
       if (existing) parts.push(existing);
     }

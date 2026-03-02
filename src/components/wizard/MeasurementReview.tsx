@@ -66,7 +66,7 @@ export default function MeasurementReview({ projectId, onStepComplete }: Measure
 
   const handleValueChange = useCallback((id: string, value: string) => {
     const num = parseFloat(value);
-    if (!isNaN(num) && num >= 0 && num <= 10000) {
+    if (!isNaN(num) && num > 0 && num <= 10000) {
       setEditValues((prev) => ({ ...prev, [id]: num }));
     }
   }, []);
@@ -76,13 +76,13 @@ export default function MeasurementReview({ projectId, onStepComplete }: Measure
     setSaveError("");
     const total = measurements.length;
     setSaveProgress({ current: 0, total });
-    let hadError = false;
+    const succeededIds = new Set<string>();
 
     for (let i = 0; i < measurements.length; i++) {
       const m = measurements[i];
       setSaveProgress({ current: i + 1, total });
       try {
-        await fetch("/api/measurements", {
+        const res = await fetch("/api/measurements", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -92,21 +92,27 @@ export default function MeasurementReview({ projectId, onStepComplete }: Measure
             sizeReference,
           }),
         });
+        if (res.ok) {
+          succeededIds.add(m.id);
+        }
       } catch {
-        hadError = true;
+        // This one failed - don't add to succeededIds
       }
     }
 
-    if (hadError) {
-      setSaveError("Some measurements failed to save. Please try again.");
+    if (succeededIds.size < measurements.length) {
+      setSaveError(
+        `${measurements.length - succeededIds.size} measurement(s) failed to save. Please try again.`
+      );
     }
 
+    // Only mark the ones that actually saved as confirmed
     setMeasurements((prev) =>
       prev.map((m) => ({
         ...m,
-        confirmed: true,
-        valueMm: editValues[m.id] ?? m.valueMm,
-        sizeReference,
+        confirmed: succeededIds.has(m.id) ? true : m.confirmed,
+        valueMm: succeededIds.has(m.id) ? (editValues[m.id] ?? m.valueMm) : m.valueMm,
+        sizeReference: succeededIds.has(m.id) ? sizeReference : m.sizeReference,
       }))
     );
     setSaving(false);
@@ -212,7 +218,7 @@ export default function MeasurementReview({ projectId, onStepComplete }: Measure
                 className="input-field w-20 text-sm text-right py-1 tabular-nums"
                 style={{ fontFamily: "'JetBrains Mono', monospace" }}
                 step="0.1"
-                min="0"
+                min="0.1"
                 max="10000"
               />
             </div>

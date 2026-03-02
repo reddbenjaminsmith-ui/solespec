@@ -90,6 +90,7 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: existingSpecs.id, ...formData }),
         });
+        setExistingSpecs({ ...existingSpecs, ...formData });
       } else {
         // Create new
         const res = await fetch("/api/specifications", {
@@ -110,13 +111,15 @@ export default function MaterialsWizard({ projectId, onStepComplete }: Materials
     }
   }, [existingSpecs, formData, projectId, onStepComplete]);
 
-  // Check if minimum data is filled
+  // Enable Next only when data has been saved (either loaded from prior save or just saved)
   useEffect(() => {
-    const hasData = formData.upperMaterial || formData.outsoleMaterial || formData.liningMaterial;
-    if (hasData && existingSpecs) {
-      onStepComplete();
+    if (existingSpecs) {
+      const hasSavedData = existingSpecs.upperMaterial || existingSpecs.outsoleMaterial || existingSpecs.liningMaterial;
+      if (hasSavedData) {
+        onStepComplete();
+      }
     }
-  }, [formData, existingSpecs, onStepComplete]);
+  }, [existingSpecs, onStepComplete]);
 
   if (loading) {
     return (

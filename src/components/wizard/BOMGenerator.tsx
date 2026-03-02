@@ -129,32 +129,14 @@ export default function BOMGenerator({ projectId, onStepComplete }: BOMGenerator
   }, []);
 
   const handleSave = useCallback(async () => {
+    if (saving) return; // Prevent double-click
     const validItems = items.filter((item) => item.component.trim());
     if (validItems.length === 0) return;
 
     setSaving(true);
     setSaveError("");
     try {
-      // Delete existing items first - track failures
-      let deleteFailed = false;
-      for (const id of existingIds) {
-        try {
-          await fetch("/api/bom", {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id }),
-          });
-        } catch {
-          deleteFailed = true;
-        }
-      }
-      if (deleteFailed) {
-        setSaveError("Failed to update some items. Please try again.");
-        setSaving(false);
-        return;
-      }
-
-      // Create all new items
+      // Create new items FIRST (safe - old items still exist as fallback)
       const res = await fetch("/api/bom", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -172,17 +154,36 @@ export default function BOMGenerator({ projectId, onStepComplete }: BOMGenerator
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setExistingIds(data.ids || []);
-        onStepComplete();
+      if (!res.ok) {
+        setSaveError("Failed to save BOM. Please try again.");
+        setSaving(false);
+        return;
       }
+
+      const data = await res.json();
+      const newIds: string[] = data.ids || [];
+
+      // Now delete old items (new ones are safely saved)
+      for (const id of existingIds) {
+        try {
+          await fetch("/api/bom", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+          });
+        } catch {
+          // Old item failed to delete - not critical, data is safe
+        }
+      }
+
+      setExistingIds(newIds);
+      onStepComplete();
     } catch {
       setSaveError("Failed to save BOM. Please try again.");
     } finally {
       setSaving(false);
     }
-  }, [items, existingIds, projectId, onStepComplete]);
+  }, [items, saving, existingIds, projectId, onStepComplete]);
 
   if (loading) {
     return (

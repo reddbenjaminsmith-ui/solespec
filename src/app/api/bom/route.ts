@@ -147,6 +147,7 @@ export async function GET(request: Request) {
       .select({
         filterByFormula: `FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0`,
         sort: [{ field: "Sort Order", direction: "asc" }],
+        maxRecords: 100,
       })
       .all();
 

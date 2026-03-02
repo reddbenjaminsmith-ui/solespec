@@ -60,7 +60,15 @@ export default class ThreeErrorBoundary extends Component<Props, State> {
               3D Viewer Error
             </p>
             <p className="text-xs text-slate-500 mb-4">
-              Failed to load the 3D model. Try refreshing the page.
+              {this.state.errorMessage.toLowerCase().includes("fetch") ||
+              this.state.errorMessage.toLowerCase().includes("network") ||
+              this.state.errorMessage.toLowerCase().includes("failed to load")
+                ? "The 3D file could not be downloaded. Check your internet connection or try re-uploading the file."
+                : this.state.errorMessage.toLowerCase().includes("parse") ||
+                  this.state.errorMessage.toLowerCase().includes("invalid") ||
+                  this.state.errorMessage.toLowerCase().includes("unexpected token")
+                ? "The file does not appear to be a valid GLB/GLTF model."
+                : "Failed to load the 3D model. Try refreshing the page."}
             </p>
             <button
               onClick={() => this.setState({ hasError: false, errorMessage: "" })}

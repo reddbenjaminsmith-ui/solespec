@@ -34,6 +34,11 @@ function Model({
   const gltf = useGLTF(url);
   const called = useRef(false);
 
+  // Reset callback flag when URL changes so onLoaded fires for new models
+  useEffect(() => {
+    called.current = false;
+  }, [url]);
+
   useEffect(() => {
     if (gltf.scene && onLoaded && !called.current) {
       called.current = true;
@@ -109,6 +114,35 @@ export default function ModelViewer({
     },
     [onModelLoaded]
   );
+
+  // Validate URL before attempting to load
+  if (!modelUrl || modelUrl.trim() === "") {
+    return (
+      <div className="w-full h-full min-h-[400px] rounded-xl bg-surface-900 flex items-center justify-center">
+        <div className="text-center p-8">
+          <p className="text-sm text-slate-500">No 3D model URL provided</p>
+        </div>
+      </div>
+    );
+  }
+
+  let isValidUrl = false;
+  try {
+    new URL(modelUrl);
+    isValidUrl = true;
+  } catch {
+    // Invalid URL format
+  }
+
+  if (!isValidUrl) {
+    return (
+      <div className="w-full h-full min-h-[400px] rounded-xl bg-surface-900 flex items-center justify-center">
+        <div className="text-center p-8">
+          <p className="text-sm text-red-400">Invalid model URL format</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <ThreeErrorBoundary key={modelUrl}>
