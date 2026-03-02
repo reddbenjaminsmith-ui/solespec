@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import ModelViewerWrapper from "@/components/ModelViewerWrapper";
 import type { ThreeRefs } from "@/components/ModelViewerWrapper";
 import ViewCaptureWrapper from "@/components/ViewCaptureWrapper";
 import PhotorealisticRender from "@/components/PhotorealisticRender";
+import StudioRender from "@/components/StudioRender";
 import WizardContainer from "@/components/wizard/WizardContainer";
 import type { Project, RenderedView, SketchAnalysisResult } from "@/lib/types";
 import type * as THREE from "three";
@@ -76,6 +77,14 @@ export default function ProjectWorkspacePage() {
   const [viewGenError, setViewGenError] = useState("");
   const { start: startSketchSSE, isStreaming: analyzingSketch } = useSSEStream();
   const { start: startViewGenSSE, isStreaming: generatingViews } = useSSEStream();
+
+  // Studio rendering mode
+  const [studioMode, setStudioMode] = useState(false);
+
+  // Separate basic captures from photorealistic/studio renders
+  const basicViews = useMemo(() => views.filter((v) => !v.isPhotorealistic && !v.isStudioRender), [views]);
+  const photoViews = useMemo(() => views.filter((v) => v.isPhotorealistic), [views]);
+  const studioViews = useMemo(() => views.filter((v) => v.isStudioRender), [views]);
 
   // Predecessor capture state
   const [predecessorRenders, setPredecessorRenders] = useState<Array<{ viewName: string; imageUrl: string }>>([]);
@@ -595,6 +604,7 @@ export default function ProjectWorkspacePage() {
             ) : project.modelUrl ? (
               <ModelViewerWrapper
                 modelUrl={project.modelUrl}
+                studioMode={studioMode}
                 onModelLoaded={handleModelLoaded}
                 onReady={handleThreeReady}
               />
@@ -1048,8 +1058,17 @@ export default function ProjectWorkspacePage() {
                 </p>
               </div>
 
-              {/* Photorealistic render (optional) */}
-              <PhotorealisticRender projectId={projectId} />
+              {/* 3D Studio renders (consistent, from actual model) */}
+              <StudioRender
+                projectId={projectId}
+                threeRefs={threeRefs}
+                modelScene={modelScene}
+                existingRenders={studioViews}
+                onStudioModeChange={setStudioMode}
+              />
+
+              {/* AI photorealistic renders (optional) */}
+              <PhotorealisticRender projectId={projectId} existingRenders={photoViews} />
 
               {/* Analysis section */}
               <div className="glass-card-static p-6 rounded-xl">
@@ -1155,19 +1174,23 @@ export default function ProjectWorkspacePage() {
               </div>
 
               {/* View thumbnails */}
-              {views.length > 0 && (
-                <div>
-                  <p className="section-label mb-2">Captured Views</p>
-                  <div className="grid grid-cols-4 gap-2">
-                    {views.slice(0, 4).map((view) => (
-                      <div key={view.id} className="rounded-lg overflow-hidden border border-white/[0.06]">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={view.imageUrl} alt={view.viewName} className="w-full aspect-square object-contain bg-white/[0.02]" />
-                      </div>
-                    ))}
+              {views.length > 0 && (() => {
+                const displayViews = studioViews.length > 0 ? studioViews : photoViews.length > 0 ? photoViews : basicViews;
+                const label = studioViews.length > 0 ? "Studio Renders" : photoViews.length > 0 ? "Product Shots" : "Captured Views";
+                return (
+                  <div>
+                    <p className="section-label mb-2">{label}</p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {displayViews.slice(0, 4).map((view) => (
+                        <div key={view.id} className="rounded-lg overflow-hidden border border-white/[0.06]">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={view.imageUrl} alt={view.viewName} className="w-full aspect-square object-contain bg-white/[0.02]" />
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </>
           )}
 

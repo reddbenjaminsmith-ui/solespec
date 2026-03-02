@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { projectId, viewName, imageUrl } = body;
+    const { projectId, viewName, imageUrl, isStudioRender } = body;
 
     // Validate projectId
     if (typeof projectId !== "string" || !isValidRecordId(projectId)) {
@@ -64,11 +64,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const record = await renderedViewsTable.create({
+    const fields: { [key: string]: string | string[] | boolean } = {
       "View Name": viewName,
       "Image URL": imageUrl,
       Project: [projectId], // Linked field - must be array
-    });
+    };
+    if (isStudioRender === true) {
+      fields["Is Studio Render"] = true;
+    }
+    const record = await renderedViewsTable.create(fields);
 
     return NextResponse.json({
       id: record.getId(),
@@ -116,6 +120,8 @@ export async function GET(request: Request) {
       projectId,
       viewName: record.get("View Name") || "",
       imageUrl: record.get("Image URL") || "",
+      isPhotorealistic: record.get("Is Photorealistic") === true,
+      isStudioRender: record.get("Is Studio Render") === true,
     }));
 
     return NextResponse.json({ views });

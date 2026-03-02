@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Environment, Center } from "@react-three/drei";
+import { EffectComposer, SSAO, SMAA } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
@@ -23,6 +24,7 @@ export interface ThreeRefs {
 
 interface ModelViewerProps {
   modelUrl: string;
+  studioMode?: boolean;
   onModelLoaded?: (scene: THREE.Group) => void;
   onReady?: (refs: ThreeRefs) => void;
 }
@@ -50,6 +52,21 @@ function disposeScene(obj: THREE.Object3D): void {
       }
     }
   });
+}
+
+/* ── Applies tone mapping settings dynamically ── */
+function StudioSettings({ active }: { active: boolean }) {
+  const { gl } = useThree();
+  useEffect(() => {
+    if (active) {
+      gl.toneMapping = THREE.ACESFilmicToneMapping;
+      gl.toneMappingExposure = 1.2;
+    } else {
+      gl.toneMapping = THREE.NoToneMapping;
+      gl.toneMappingExposure = 1;
+    }
+  }, [active, gl]);
+  return null;
 }
 
 /* ── Pure renderer - runs INSIDE Canvas, no loading logic ── */
@@ -107,6 +124,7 @@ function ReadyNotifier({
 
 export default function ModelViewer({
   modelUrl,
+  studioMode = false,
   onModelLoaded,
   onReady,
 }: ModelViewerProps) {
@@ -374,10 +392,12 @@ export default function ModelViewer({
               failIfMajorPerformanceCaveat: false,
               powerPreference: "default",
             }}
+            shadows={studioMode}
             dpr={[1, 2]}
             camera={{ fov: 50, near: 0.01, far: 1000 }}
-            style={{ background: "#12121e" }}
+            style={{ background: studioMode ? "#f5f5f5" : "#12121e", transition: "background 0.3s" }}
           >
+            <StudioSettings active={studioMode} />
             <SceneRenderer scene={modelScene} />
             <CameraSetup modelScene={modelScene} />
             <OrbitControls
@@ -389,9 +409,32 @@ export default function ModelViewer({
               maxDistance={50}
             />
             <Environment preset="studio" />
-            <ambientLight intensity={0.4} />
-            <directionalLight position={[5, 5, 5]} intensity={1} />
-            <directionalLight position={[-3, 2, -3]} intensity={0.3} />
+            {studioMode ? (
+              <>
+                <ambientLight intensity={0.5} />
+                <directionalLight position={[5, 5, 5]} intensity={1.5} castShadow />
+                <directionalLight position={[-3, 3, -3]} intensity={0.6} />
+                <directionalLight position={[0, 5, -5]} intensity={0.4} />
+                <EffectComposer>
+                  <SSAO
+                    radius={0.1}
+                    intensity={15}
+                    luminanceInfluence={0.5}
+                    worldDistanceThreshold={0.5}
+                    worldDistanceFalloff={0.1}
+                    worldProximityThreshold={0.3}
+                    worldProximityFalloff={0.1}
+                  />
+                  <SMAA />
+                </EffectComposer>
+              </>
+            ) : (
+              <>
+                <ambientLight intensity={0.4} />
+                <directionalLight position={[5, 5, 5]} intensity={1} />
+                <directionalLight position={[-3, 2, -3]} intensity={0.3} />
+              </>
+            )}
             <ReadyNotifier onReady={onReady} controlsRef={controlsRef} />
           </Canvas>
         )}

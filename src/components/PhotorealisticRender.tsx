@@ -11,13 +11,19 @@ interface RenderView {
 
 interface PhotorealisticRenderProps {
   projectId: string;
+  existingRenders?: RenderView[];
   onComplete?: (views: RenderView[]) => void;
 }
 
-export default function PhotorealisticRender({ projectId, onComplete }: PhotorealisticRenderProps) {
-  const [phase, setPhase] = useState<"idle" | "streaming" | "complete" | "error">("idle");
+export default function PhotorealisticRender({ projectId, existingRenders, onComplete }: PhotorealisticRenderProps) {
+  const hasExisting = existingRenders && existingRenders.length > 0;
+  const [phase, setPhase] = useState<"idle" | "streaming" | "complete" | "error">(
+    hasExisting ? "complete" : "idle"
+  );
   const [progress, setProgress] = useState({ current: 0, total: 7, viewName: "" });
-  const [renderedViews, setRenderedViews] = useState<RenderView[]>([]);
+  const [renderedViews, setRenderedViews] = useState<RenderView[]>(
+    hasExisting ? existingRenders : []
+  );
   const [errorMsg, setErrorMsg] = useState("");
   const [failedCount, setFailedCount] = useState(0);
   const [lastFailMsg, setLastFailMsg] = useState("");

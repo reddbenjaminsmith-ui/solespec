@@ -37,6 +37,8 @@ export interface RenderedView {
   projectId: string;
   viewName: TechnicalView;
   imageUrl: string;
+  isPhotorealistic?: boolean;
+  isStudioRender?: boolean;
 }
 
 // AI-detected shoe component
