@@ -23,19 +23,24 @@ export async function POST(request: Request): Promise<NextResponse> {
       onBeforeGenerateToken: async (pathname) => {
         const lower = pathname.toLowerCase();
 
-        if (!lower.endsWith(".glb") && !lower.endsWith(".png")) {
-          throw new Error("Only .glb and .png files are allowed");
+        const isGlb = lower.endsWith(".glb");
+        const isImage =
+          lower.endsWith(".png") ||
+          lower.endsWith(".jpg") ||
+          lower.endsWith(".jpeg");
+
+        if (!isGlb && !isImage) {
+          throw new Error("Only .glb, .png, and .jpg files are allowed");
         }
 
-        const isGlb = lower.endsWith(".glb");
-
         return {
+          addRandomSuffix: true,
           allowedContentTypes: isGlb
             ? ["model/gltf-binary", "application/octet-stream"]
-            : ["image/png"],
+            : ["image/png", "image/jpeg"],
           maximumSizeInBytes: isGlb
             ? 100 * 1024 * 1024 // 100MB for GLB models
-            : 5 * 1024 * 1024, // 5MB for PNG view captures
+            : 10 * 1024 * 1024, // 10MB for image uploads
         };
       },
       onUploadCompleted: async () => {

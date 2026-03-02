@@ -135,6 +135,7 @@ export async function POST(request: Request) {
               {
                 access: "public",
                 contentType: "image/png",
+                addRandomSuffix: true,
               }
             );
 
