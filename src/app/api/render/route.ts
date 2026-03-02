@@ -169,7 +169,7 @@ export async function POST(request: Request) {
             );
             sendEvent("viewError", {
               viewName: view.viewName,
-              message: "Rendering failed for this view",
+              message: viewError instanceof Error ? viewError.message : "Rendering failed for this view",
             });
           }
         }
