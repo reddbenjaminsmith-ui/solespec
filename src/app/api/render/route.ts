@@ -5,7 +5,7 @@ import {
   fetchProjectRecords,
 } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
-import { getGemini, GEMINI_IMAGE_MODEL } from "@/lib/ai/gemini";
+import { getGemini, GEMINI_IMAGE_MODEL, GEMINI_IMAGE_FALLBACK } from "@/lib/ai/gemini";
 import { RENDER_PROMPT } from "@/lib/ai/prompts";
 import { put } from "@vercel/blob";
 
@@ -65,6 +65,27 @@ export async function POST(request: Request) {
 
         const renderedViews: Array<{ viewName: string; imageUrl: string; id: string }> = [];
         let errorSent = false;
+        let activeModel = GEMINI_IMAGE_MODEL;
+
+        // Helper: call Gemini with a given model and image
+        async function callGemini(model: string, base64Image: string) {
+          return getGemini().models.generateContent({
+            model,
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  { text: RENDER_PROMPT },
+                  { inlineData: { mimeType: "image/png", data: base64Image } },
+                ],
+              },
+            ],
+            config: {
+              responseModalities: ["IMAGE", "TEXT"],
+              imageConfig: { aspectRatio: "1:1" },
+            },
+          });
+        }
 
         for (let i = 0; i < views.length; i++) {
           const view = views[i];
@@ -88,31 +109,27 @@ export async function POST(request: Request) {
             const imageBuffer = await imageResponse.arrayBuffer();
             const base64Image = Buffer.from(imageBuffer).toString("base64");
 
-            // Send to Gemini for photorealistic rendering
-            const response = await getGemini().models.generateContent({
-              model: GEMINI_IMAGE_MODEL,
-              contents: [
-                {
-                  role: "user",
-                  parts: [
-                    { text: RENDER_PROMPT },
-                    {
-                      inlineData: {
-                        mimeType: "image/png",
-                        data: base64Image,
-                      },
-                    },
-                  ],
-                },
-              ],
-              config: {
-                responseModalities: ["IMAGE", "TEXT"],
-                imageConfig: {
-                  aspectRatio: "1:1",
-                  imageSize: "2K",
-                },
-              },
-            });
+            // Try active model, fallback on overload (503)
+            let response;
+            try {
+              response = await callGemini(activeModel, base64Image);
+            } catch (primaryErr) {
+              const msg = primaryErr instanceof Error ? primaryErr.message : "";
+              const isOverload = msg.includes("503") || msg.includes("high demand") || msg.includes("overloaded");
+              if (isOverload && activeModel !== GEMINI_IMAGE_FALLBACK) {
+                console.error(`${activeModel} overloaded, falling back to ${GEMINI_IMAGE_FALLBACK}`);
+                activeModel = GEMINI_IMAGE_FALLBACK;
+                sendEvent("progress", {
+                  current: i + 1,
+                  total: views.length,
+                  viewName: view.viewName,
+                  message: `Primary model busy, retrying with fallback...`,
+                });
+                response = await callGemini(activeModel, base64Image);
+              } else {
+                throw primaryErr;
+              }
+            }
 
             // Extract the generated image from response
             let renderedImageData: string | null = null;
@@ -167,7 +184,7 @@ export async function POST(request: Request) {
             const errMsg = viewError instanceof Error ? viewError.message : "Unknown error";
             console.error(`Render ${view.viewName} failed:`, errMsg);
 
-            // Detect quota/billing errors - stop early, no point retrying other views
+            // Detect quota/billing errors - stop early
             const isQuotaError = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota");
             if (isQuotaError) {
               errorSent = true;
@@ -177,7 +194,17 @@ export async function POST(request: Request) {
               break;
             }
 
-            // Detect auth/permission errors - stop early, all views will fail the same way
+            // Detect overload on fallback too - stop early
+            const isOverload = errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("overloaded");
+            if (isOverload) {
+              errorSent = true;
+              sendEvent("error", {
+                message: "Gemini image generation is experiencing high demand. Please try again in a few minutes.",
+              });
+              break;
+            }
+
+            // Detect auth/permission errors - stop early
             const isAuthError = errMsg.includes("403") || errMsg.includes("401") || errMsg.includes("PERMISSION_DENIED") || errMsg.includes("API_KEY");
             if (isAuthError) {
               errorSent = true;
@@ -192,12 +219,12 @@ export async function POST(request: Request) {
             if (isModelError) {
               errorSent = true;
               sendEvent("error", {
-                message: `Gemini model "${GEMINI_IMAGE_MODEL}" not found. It may not be available for your account.`,
+                message: `Gemini model "${activeModel}" not found. It may not be available for your account.`,
               });
               break;
             }
 
-            // For other errors, include a safe summary (truncate to avoid leaking internals)
+            // For other errors, include a safe summary
             const safeMsg = errMsg.length > 120 ? errMsg.slice(0, 120) + "..." : errMsg;
             sendEvent("viewError", {
               viewName: view.viewName,

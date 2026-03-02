@@ -18,3 +18,6 @@ export function getGemini(): GoogleGenAI {
 // Higher quality, more photorealistic, better prompt adherence than GPT Image 1.5
 // Supports up to 4K output, image-to-image editing, and multi-image input
 export const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image-preview";
+
+// Fallback: Nano Banana 2 (Gemini 3.1 Flash Image) - faster, good quality, more capacity
+export const GEMINI_IMAGE_FALLBACK = "gemini-3.1-flash-image-preview";
