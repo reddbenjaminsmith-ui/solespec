@@ -80,12 +80,20 @@ export async function POST(request: Request) {
       );
     }
 
-    const viewUrls = viewsToAnalyze
+    const allViewUrls = viewsToAnalyze
       .map((r) => ({
         viewName: (r.get("View Name") as string) || "",
         imageUrl: (r.get("Image URL") as string) || "",
       }))
       .filter((v) => v.imageUrl && isValidUrl(v.imageUrl));
+
+    // Deduplicate by view name - keep only one image per angle
+    const seenViews = new Set<string>();
+    const viewUrls = allViewUrls.filter((v) => {
+      if (seenViews.has(v.viewName)) return false;
+      seenViews.add(v.viewName);
+      return true;
+    });
 
     // Update project status to analyzing
     await projectsTable.update(projectId, { Status: "analyzing" });
@@ -101,6 +109,23 @@ export async function POST(request: Request) {
         };
 
         try {
+          // --- Cleanup: delete existing components/measurements from prior runs ---
+          const existingComponents = await fetchProjectRecords(
+            componentsTable, projectId, { projectName }
+          );
+          const existingMeasurements = await fetchProjectRecords(
+            measurementsTable, projectId, { projectName }
+          );
+          // Delete in batches of 10 (Airtable limit)
+          for (let i = 0; i < existingComponents.length; i += 10) {
+            const batch = existingComponents.slice(i, i + 10).map((r) => r.getId());
+            await componentsTable.destroy(batch);
+          }
+          for (let i = 0; i < existingMeasurements.length; i += 10) {
+            const batch = existingMeasurements.slice(i, i + 10).map((r) => r.getId());
+            await measurementsTable.destroy(batch);
+          }
+
           // --- Phase 1: Component Detection ---
           sendEvent("status", {
             step: "analyzing_components",
@@ -228,11 +253,14 @@ export async function POST(request: Request) {
             constructionGuess: componentData.constructionGuess,
           });
         } catch (analysisError) {
+          // Extract useful diagnostic info without leaking secrets
+          const errMsg = analysisError instanceof Error ? analysisError.message : "Unknown error";
+          const errStatus = (analysisError as { status?: number }).status;
+          const errCode = (analysisError as { code?: string }).code;
+          const errType = (analysisError as { type?: string }).type;
           console.error(
             "AI analysis failed:",
-            analysisError instanceof Error
-              ? analysisError.message
-              : "Unknown error"
+            JSON.stringify({ message: errMsg, status: errStatus, code: errCode, type: errType })
           );
 
           // Reset project status on failure
@@ -244,8 +272,22 @@ export async function POST(request: Request) {
             // Best effort status reset
           }
 
+          // Surface a specific but safe error message
+          let clientMessage = "AI analysis failed. Please try again.";
+          if (errCode === "ETIMEDOUT" || errCode === "ECONNABORTED" || errMsg.includes("timeout")) {
+            clientMessage = "Analysis timed out. Try again.";
+          } else if (errStatus === 429) {
+            clientMessage = "Rate limited by AI provider. Wait a minute and try again.";
+          } else if (errStatus === 400) {
+            clientMessage = "Invalid request to AI provider. Check logs for details.";
+          } else if (errStatus === 401 || errStatus === 403) {
+            clientMessage = "AI provider authentication error. Check API key.";
+          } else if (errStatus && errStatus >= 500) {
+            clientMessage = "AI provider is temporarily unavailable. Try again in a moment.";
+          }
+
           sendEvent("error", {
-            message: "AI analysis failed. Please try again.",
+            message: clientMessage,
           });
         }
 

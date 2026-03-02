@@ -62,12 +62,12 @@ Return ONLY valid JSON. No markdown code fences, no explanation text.`;
 
 export function buildComponentAnalysisMessages(
   viewUrls: { viewName: string; imageUrl: string }[]
-): Array<{ role: "system" | "user"; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> {
-  const imageContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+): Array<{ role: "system" | "user"; content: string | Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }> }> {
+  const imageContent: Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }> = [];
 
   imageContent.push({
     type: "text",
-    text: "Here are 7 technical views of a 3D shoe model. Identify all visible components with their positions.",
+    text: "Here are technical views of a 3D shoe model. Identify all visible components with their positions.",
   });
 
   for (const view of viewUrls) {
@@ -77,7 +77,7 @@ export function buildComponentAnalysisMessages(
     });
     imageContent.push({
       type: "image_url",
-      image_url: { url: view.imageUrl },
+      image_url: { url: view.imageUrl, detail: "low" },
     });
   }
 
@@ -89,13 +89,13 @@ export function buildComponentAnalysisMessages(
 
 export function buildMeasurementMessages(
   viewUrls: { viewName: string; imageUrl: string }[]
-): Array<{ role: "system" | "user"; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }> {
+): Array<{ role: "system" | "user"; content: string | Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }> }> {
   // Use side and front views for measurement estimation
   const relevantViews = viewUrls.filter((v) =>
     ["front", "left", "right", "back", "three_quarter"].includes(v.viewName)
   );
 
-  const imageContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+  const imageContent: Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }> = [];
 
   imageContent.push({
     type: "text",
@@ -109,7 +109,7 @@ export function buildMeasurementMessages(
     });
     imageContent.push({
       type: "image_url",
-      image_url: { url: view.imageUrl },
+      image_url: { url: view.imageUrl, detail: "low" },
     });
   }
 
