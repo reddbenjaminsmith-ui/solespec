@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Environment, Center } from "@react-three/drei";
 import * as THREE from "three";
@@ -27,70 +27,8 @@ interface ModelViewerProps {
   onReady?: (refs: ThreeRefs) => void;
 }
 
-function Model({
-  url,
-  onLoaded,
-  onProgress,
-  onError,
-}: {
-  url: string;
-  onLoaded?: (scene: THREE.Group) => void;
-  onProgress?: (percent: number) => void;
-  onError?: (message: string) => void;
-}) {
-  const [scene, setScene] = useState<THREE.Group | null>(null);
-  const callbacksRef = useRef({ onLoaded, onProgress, onError });
-  callbacksRef.current = { onLoaded, onProgress, onError };
-
-  useEffect(() => {
-    let disposed = false;
-
-    const loader = new GLTFLoader();
-
-    // Draco decoder - handles Draco-compressed meshes (very common in modern GLBs)
-    const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath(
-      "https://www.gstatic.com/draco/versioned/decoders/1.5.7/"
-    );
-    loader.setDRACOLoader(dracoLoader);
-
-    // Meshopt decoder - handles meshopt-compressed meshes
-    loader.setMeshoptDecoder(
-      MeshoptDecoder as unknown as typeof import("three/examples/jsm/libs/meshopt_decoder.module.js").MeshoptDecoder
-    );
-
-    loader.load(
-      url,
-      (gltf) => {
-        if (disposed) return;
-        setScene(gltf.scene);
-        callbacksRef.current.onLoaded?.(gltf.scene);
-      },
-      (event) => {
-        if (disposed) return;
-        if (event.lengthComputable) {
-          callbacksRef.current.onProgress?.(
-            Math.round((event.loaded / event.total) * 100)
-          );
-        }
-      },
-      (error) => {
-        if (disposed) return;
-        const msg =
-          error instanceof Error ? error.message : String(error);
-        console.error("GLB load error:", msg);
-        callbacksRef.current.onError?.(msg);
-      }
-    );
-
-    return () => {
-      disposed = true;
-      dracoLoader.dispose();
-    };
-  }, [url]);
-
-  if (!scene) return null;
-
+/* ── Pure renderer - runs INSIDE Canvas, no loading logic ── */
+function SceneRenderer({ scene }: { scene: THREE.Group }) {
   return (
     <Center>
       <primitive object={scene} />
@@ -156,7 +94,7 @@ export default function ModelViewer({
   const [retryKey, setRetryKey] = useState(0);
   const controlsRef = useRef(null);
 
-  // Pre-flight URL check - verify file is accessible before handing to Three.js
+  // Pre-flight URL check - verify file is accessible before loading
   useEffect(() => {
     let cancelled = false;
 
@@ -196,23 +134,55 @@ export default function ModelViewer({
     };
   }, [modelUrl, retryKey]);
 
-  const handleModelLoaded = useCallback(
-    (scene: THREE.Group) => {
-      setModelScene(scene);
-      setStatus("loaded");
-      onModelLoaded?.(scene);
-    },
-    [onModelLoaded]
-  );
+  // Load the model in DOM context (NOT inside Canvas) - this is the fix.
+  // GLTFLoader.load() hangs when called inside R3F's Canvas reconciler,
+  // but works perfectly in normal DOM React context.
+  useEffect(() => {
+    if (status !== "loading") return;
 
-  const handleLoadProgress = useCallback((percent: number) => {
-    setLoadProgress(percent);
-  }, []);
+    let disposed = false;
 
-  const handleLoadError = useCallback((message: string) => {
-    setStatus("error");
-    setErrorMessage(message || "Failed to load the 3D model.");
-  }, []);
+    const loader = new GLTFLoader();
+
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath(
+      "https://www.gstatic.com/draco/versioned/decoders/1.5.7/"
+    );
+    loader.setDRACOLoader(dracoLoader);
+
+    loader.setMeshoptDecoder(
+      MeshoptDecoder as unknown as typeof import("three/examples/jsm/libs/meshopt_decoder.module.js").MeshoptDecoder
+    );
+
+    loader.load(
+      modelUrl,
+      (gltf) => {
+        if (disposed) return;
+        setModelScene(gltf.scene);
+        setStatus("loaded");
+        onModelLoaded?.(gltf.scene);
+      },
+      (event) => {
+        if (disposed) return;
+        if (event.lengthComputable) {
+          setLoadProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      },
+      (error) => {
+        if (disposed) return;
+        const msg =
+          error instanceof Error ? error.message : String(error);
+        console.error("GLB load error:", msg);
+        setStatus("error");
+        setErrorMessage(msg || "Failed to load the 3D model.");
+      }
+    );
+
+    return () => {
+      disposed = true;
+      dracoLoader.dispose();
+    };
+  }, [status, modelUrl, onModelLoaded]);
 
   // URL validation
   if (!modelUrl || modelUrl.trim() === "") {
@@ -243,7 +213,7 @@ export default function ModelViewer({
     );
   }
 
-  // Error state - show before Canvas to avoid unnecessary WebGL context creation
+  // Error state
   if (status === "error") {
     return (
       <div className="w-full h-full min-h-[400px] rounded-xl bg-surface-900 flex items-center justify-center">
@@ -274,6 +244,7 @@ export default function ModelViewer({
             onClick={() => {
               setErrorMessage("");
               setLoadProgress(0);
+              setModelScene(null);
               setRetryKey((k) => k + 1);
             }}
             className="btn-secondary px-4 py-2 rounded-xl text-sm"
@@ -313,19 +284,14 @@ export default function ModelViewer({
             </div>
           </div>
         )}
-        {status !== "checking" && (
+        {modelScene && (
           <Canvas
             gl={{ preserveDrawingBuffer: true, antialias: true }}
             dpr={[1, 2]}
             camera={{ fov: 50, near: 0.01, far: 1000 }}
             style={{ background: "#12121e" }}
           >
-            <Model
-              url={modelUrl}
-              onLoaded={handleModelLoaded}
-              onProgress={handleLoadProgress}
-              onError={handleLoadError}
-            />
+            <SceneRenderer scene={modelScene} />
             <CameraSetup modelScene={modelScene} />
             <OrbitControls
               ref={controlsRef}
