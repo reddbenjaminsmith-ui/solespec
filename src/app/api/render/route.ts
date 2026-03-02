@@ -163,13 +163,21 @@ export async function POST(request: Request) {
               imageUrl: blob.url,
             });
           } catch (viewError) {
-            console.error(
-              `Render ${view.viewName} failed:`,
-              viewError instanceof Error ? viewError.message : "Unknown error"
-            );
+            const errMsg = viewError instanceof Error ? viewError.message : "Unknown error";
+            console.error(`Render ${view.viewName} failed:`, errMsg);
+
+            // Detect quota/billing errors - stop early, no point retrying other views
+            const isQuotaError = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota");
+            if (isQuotaError) {
+              sendEvent("error", {
+                message: "Gemini API quota exceeded. Enable billing at ai.google.dev to use image generation.",
+              });
+              break;
+            }
+
             sendEvent("viewError", {
               viewName: view.viewName,
-              message: viewError instanceof Error ? viewError.message : "Rendering failed for this view",
+              message: "Rendering failed for this view",
             });
           }
         }
