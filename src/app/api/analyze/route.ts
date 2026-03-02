@@ -4,8 +4,8 @@ import {
   componentsTable,
   measurementsTable,
   projectsTable,
-  escapeForFormula,
   isValidRecordId,
+  fetchProjectRecords,
 } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import { getOpenAI, OPENAI_MODEL } from "@/lib/ai/openai";
@@ -55,12 +55,12 @@ export async function POST(request: Request) {
     }
 
     // Fetch views - prefer photorealistic, fall back to raw
-    const allViewRecords = await renderedViewsTable
-      .select({
-        filterByFormula: `FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0`,
-        maxRecords: 100,
-      })
-      .all();
+    const projectName = project.get("Name") as string;
+    const allViewRecords = await fetchProjectRecords(
+      renderedViewsTable,
+      projectId,
+      { projectName }
+    );
 
     // Separate photorealistic vs raw views
     const photoViews = allViewRecords.filter(

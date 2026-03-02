@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   bomItemsTable,
-  escapeForFormula,
   isValidRecordId,
+  fetchProjectRecords,
 } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 
@@ -143,13 +143,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const records = await bomItemsTable
-      .select({
-        filterByFormula: `FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0`,
-        sort: [{ field: "Sort Order", direction: "asc" }],
-        maxRecords: 100,
-      })
-      .all();
+    const records = await fetchProjectRecords(bomItemsTable, projectId);
 
     const items = records.map((record) => ({
       id: record.getId(),

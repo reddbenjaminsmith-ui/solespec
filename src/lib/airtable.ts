@@ -30,3 +30,32 @@ export function escapeForFormula(value: string): string {
 export function isValidRecordId(id: string): boolean {
   return typeof id === "string" && /^rec[a-zA-Z0-9]{14}$/.test(id);
 }
+
+// Fetch records from any table that are linked to a specific project.
+// ARRAYJOIN({Project}) returns the project NAME, not record ID, so we
+// search by name then verify the linked record ID in application code.
+export async function fetchProjectRecords(
+  table: ReturnType<typeof base>,
+  projectId: string,
+  options?: { projectName?: string; maxRecords?: number }
+): Promise<Airtable.Records<Airtable.FieldSet>> {
+  let projectName = options?.projectName;
+  if (!projectName) {
+    const project = await projectsTable.find(projectId);
+    projectName = project.get("Name") as string;
+  }
+  if (!projectName) return [];
+
+  const records = await table
+    .select({
+      filterByFormula: `FIND("${escapeForFormula(projectName)}", ARRAYJOIN({Project})) > 0`,
+      maxRecords: options?.maxRecords || 100,
+    })
+    .all();
+
+  // Verify linked record IDs match (guards against name collisions)
+  return records.filter((r) => {
+    const linked = r.get("Project") as string[] | undefined;
+    return linked && linked.includes(projectId);
+  });
+}

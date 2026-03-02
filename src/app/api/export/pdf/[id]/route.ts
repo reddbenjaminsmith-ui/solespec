@@ -10,8 +10,8 @@ import {
   crossSectionsTable,
   annotationsTable,
   stitchCalloutsTable,
-  escapeForFormula,
   isValidRecordId,
+  fetchProjectRecords,
 } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import TechPackDocument from "@/lib/pdf/TechPackDocument";
@@ -62,19 +62,18 @@ export async function GET(
       sourceType: (projectRecord.fields["Source Type"] as Project["sourceType"]) || "3D Model",
     };
 
-    // Fetch all related data in parallel
-    const escapedId = escapeForFormula(projectId);
-    const formula = `FIND("${escapedId}", ARRAYJOIN({Project})) > 0`;
+    // Fetch all related data in parallel using project name for ARRAYJOIN matching
+    const projectName = (projectRecord.fields["Name"] as string) || "";
 
     const [viewRecords, compRecords, measRecords, specRecords, bomRecords, csRecords, annRecords, stitchRecords] = await Promise.all([
-      renderedViewsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
-      componentsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
-      measurementsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
-      specificationsTable.select({ filterByFormula: formula, maxRecords: 100 }).all(),
-      bomItemsTable.select({ filterByFormula: formula, sort: [{ field: "Sort Order", direction: "asc" }], maxRecords: 100 }).all(),
-      crossSectionsTable.select({ filterByFormula: formula, sort: [{ field: "Sort Order", direction: "asc" }], maxRecords: 100 }).all(),
-      annotationsTable.select({ filterByFormula: formula, sort: [{ field: "Sort Order", direction: "asc" }], maxRecords: 100 }).all(),
-      stitchCalloutsTable.select({ filterByFormula: formula, sort: [{ field: "Sort Order", direction: "asc" }], maxRecords: 100 }).all(),
+      fetchProjectRecords(renderedViewsTable, projectId, { projectName }),
+      fetchProjectRecords(componentsTable, projectId, { projectName }),
+      fetchProjectRecords(measurementsTable, projectId, { projectName }),
+      fetchProjectRecords(specificationsTable, projectId, { projectName }),
+      fetchProjectRecords(bomItemsTable, projectId, { projectName }),
+      fetchProjectRecords(crossSectionsTable, projectId, { projectName }),
+      fetchProjectRecords(annotationsTable, projectId, { projectName }),
+      fetchProjectRecords(stitchCalloutsTable, projectId, { projectName }),
     ]);
 
     const views = viewRecords.map((r) => ({

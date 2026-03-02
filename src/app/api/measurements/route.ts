@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   measurementsTable,
-  escapeForFormula,
   isValidRecordId,
+  fetchProjectRecords,
 } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 // Intentionally public - no auth check yet. Will be gated behind authentication in a future phase.
@@ -135,12 +135,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const records = await measurementsTable
-      .select({
-        filterByFormula: `FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0`,
-        maxRecords: 100,
-      })
-      .all();
+    const records = await fetchProjectRecords(measurementsTable, projectId);
 
     const measurements = records.map((record) => ({
       id: record.getId(),

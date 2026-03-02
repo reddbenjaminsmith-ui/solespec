@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   renderedViewsTable,
-  escapeForFormula,
   isValidRecordId,
+  fetchProjectRecords,
 } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import { getGemini, GEMINI_IMAGE_MODEL } from "@/lib/ai/gemini";
@@ -35,13 +35,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // Fetch existing raw views for this project
-    const viewRecords = await renderedViewsTable
-      .select({
-        filterByFormula: `AND(FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0, {Is Photorealistic} != TRUE())`,
-        maxRecords: 100,
-      })
-      .all();
+    // Fetch existing views for this project, filter raw (non-photorealistic) in app code
+    const allViewRecords = await fetchProjectRecords(renderedViewsTable, projectId);
+    const viewRecords = allViewRecords.filter(
+      (r) => r.get("Is Photorealistic") !== true
+    );
 
     if (viewRecords.length === 0) {
       return NextResponse.json(

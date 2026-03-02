@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   stitchCalloutsTable,
-  escapeForFormula,
   isValidRecordId,
+  fetchProjectRecords,
 } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import {
@@ -180,13 +180,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const records = await stitchCalloutsTable
-      .select({
-        filterByFormula: `FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0`,
-        sort: [{ field: "Sort Order", direction: "asc" }],
-        maxRecords: 100,
-      })
-      .all();
+    const records = await fetchProjectRecords(stitchCalloutsTable, projectId);
 
     const items = records.map((record) => ({
       id: record.getId(),

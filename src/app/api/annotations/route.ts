@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   annotationsTable,
-  escapeForFormula,
   isValidRecordId,
+  fetchProjectRecords,
 } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import { TECHNICAL_VIEWS } from "@/lib/constants";
@@ -156,13 +156,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const records = await annotationsTable
-      .select({
-        filterByFormula: `FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0`,
-        sort: [{ field: "Sort Order", direction: "asc" }],
-        maxRecords: 100,
-      })
-      .all();
+    const records = await fetchProjectRecords(annotationsTable, projectId);
 
     const items = records.map((record) => ({
       id: record.getId(),

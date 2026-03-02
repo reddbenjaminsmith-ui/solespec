@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   specificationsTable,
-  escapeForFormula,
   isValidRecordId,
+  fetchProjectRecords,
 } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import { CONSTRUCTION_METHODS } from "@/lib/constants";
@@ -141,12 +141,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const records = await specificationsTable
-      .select({
-        filterByFormula: `FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0`,
-        maxRecords: 100,
-      })
-      .all();
+    const records = await fetchProjectRecords(specificationsTable, projectId);
 
     if (records.length === 0) {
       return NextResponse.json({ specifications: null });

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   componentsTable,
-  escapeForFormula,
   isValidRecordId,
+  fetchProjectRecords,
 } from "@/lib/airtable";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import { COMPONENT_CATEGORIES } from "@/lib/constants";
@@ -148,12 +148,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const records = await componentsTable
-      .select({
-        filterByFormula: `FIND("${escapeForFormula(projectId)}", ARRAYJOIN({Project})) > 0`,
-        maxRecords: 100,
-      })
-      .all();
+    const records = await fetchProjectRecords(componentsTable, projectId);
 
     const components = records.map((record) => ({
       id: record.getId(),
