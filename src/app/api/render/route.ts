@@ -35,20 +35,30 @@ export async function POST(request: Request) {
       );
     }
 
-    // Fetch existing views for this project, filter raw (non-photorealistic) in app code
+    // Fetch existing views for this project
     const allViewRecords = await fetchProjectRecords(renderedViewsTable, projectId);
-    const viewRecords = allViewRecords.filter(
-      (r) => r.get("Is Photorealistic") !== true
-    );
+    const rawViews = allViewRecords.filter((r) => r.get("Is Photorealistic") !== true);
+    const photoViews = allViewRecords.filter((r) => r.get("Is Photorealistic") === true);
 
-    if (viewRecords.length === 0) {
+    if (rawViews.length === 0) {
       return NextResponse.json(
         { error: "No views found for this project. Capture views first." },
         { status: 400 }
       );
     }
 
-    const views = viewRecords.map((r) => ({
+    // Skip views that already have a photorealistic version
+    const alreadyRendered = new Set(photoViews.map((r) => r.get("View Name") as string));
+    const viewsToRender = rawViews.filter((r) => !alreadyRendered.has(r.get("View Name") as string));
+
+    if (viewsToRender.length === 0) {
+      return NextResponse.json(
+        { error: "All views already have photorealistic renders." },
+        { status: 400 }
+      );
+    }
+
+    const views = viewsToRender.map((r) => ({
       viewName: (r.get("View Name") as string) || "",
       imageUrl: (r.get("Image URL") as string) || "",
     }));
@@ -146,8 +156,8 @@ export async function POST(request: Request) {
           return { viewName: view.viewName, imageUrl: blob.url, id: record.getId() };
         }
 
-        // Process views in parallel batches of 3
-        const BATCH_SIZE = 3;
+        // Process views in parallel batches of 4
+        const BATCH_SIZE = 4;
         for (let batchStart = 0; batchStart < views.length; batchStart += BATCH_SIZE) {
           if (errorSent) break;
 
