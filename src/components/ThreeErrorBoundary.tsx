@@ -12,6 +12,41 @@ interface State {
   errorMessage: string;
 }
 
+function classifyError(message: string): string {
+  const lower = message.toLowerCase();
+
+  if (lower.includes("dracoloader") || lower.includes("draco")) {
+    return "This model uses Draco compression. Please re-upload the file or try a different model.";
+  }
+  if (lower.includes("meshopt")) {
+    return "This model uses meshopt compression. Please try a different model.";
+  }
+  if (
+    lower.includes("fetch") ||
+    lower.includes("network") ||
+    lower.includes("failed to load") ||
+    lower.includes("404") ||
+    lower.includes("aborted")
+  ) {
+    return "The 3D file could not be downloaded. Check your internet connection or try re-uploading the file.";
+  }
+  if (
+    lower.includes("parse") ||
+    lower.includes("invalid") ||
+    lower.includes("unexpected token") ||
+    lower.includes("magic bytes")
+  ) {
+    return "The file does not appear to be a valid GLB/GLTF model.";
+  }
+  if (lower.includes("webgl") || lower.includes("context")) {
+    return "Your browser could not create a WebGL context. Try closing other tabs or restarting your browser.";
+  }
+  if (lower.includes("memory") || lower.includes("allocation")) {
+    return "The model is too large for your browser to handle. Try a smaller file.";
+  }
+  return "Failed to load the 3D model. Try refreshing the page.";
+}
+
 export default class ThreeErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
@@ -34,6 +69,8 @@ export default class ThreeErrorBoundary extends Component<Props, State> {
       if (this.props.fallback) {
         return this.props.fallback;
       }
+
+      const userMessage = classifyError(this.state.errorMessage);
 
       return (
         <div className="w-full h-full min-h-[400px] rounded-xl bg-surface-900 flex items-center justify-center">
@@ -59,19 +96,11 @@ export default class ThreeErrorBoundary extends Component<Props, State> {
             >
               3D Viewer Error
             </p>
-            <p className="text-xs text-slate-500 mb-4">
-              {this.state.errorMessage.toLowerCase().includes("fetch") ||
-              this.state.errorMessage.toLowerCase().includes("network") ||
-              this.state.errorMessage.toLowerCase().includes("failed to load")
-                ? "The 3D file could not be downloaded. Check your internet connection or try re-uploading the file."
-                : this.state.errorMessage.toLowerCase().includes("parse") ||
-                  this.state.errorMessage.toLowerCase().includes("invalid") ||
-                  this.state.errorMessage.toLowerCase().includes("unexpected token")
-                ? "The file does not appear to be a valid GLB/GLTF model."
-                : "Failed to load the 3D model. Try refreshing the page."}
-            </p>
+            <p className="text-xs text-slate-500 mb-4">{userMessage}</p>
             <button
-              onClick={() => this.setState({ hasError: false, errorMessage: "" })}
+              onClick={() =>
+                this.setState({ hasError: false, errorMessage: "" })
+              }
               className="btn-secondary px-4 py-2 rounded-xl text-sm"
             >
               Retry

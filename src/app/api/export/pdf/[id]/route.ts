@@ -113,6 +113,12 @@ export async function GET(
           hardware: (specRecords[0].fields["Hardware"] as string) || "",
           constructionMethod: (specRecords[0].fields["Construction Method"] as string) || "",
           additionalNotes: (specRecords[0].fields["Additional Notes"] as string) || "",
+          upperColor: (specRecords[0].fields["Upper Color"] as string) || "",
+          upperSecondaryColor: (specRecords[0].fields["Upper Secondary Color"] as string) || "",
+          liningColor: (specRecords[0].fields["Lining Color"] as string) || "",
+          outsoleColor: (specRecords[0].fields["Outsole Color"] as string) || "",
+          midsoleColor: (specRecords[0].fields["Midsole Color"] as string) || "",
+          hardwareColor: (specRecords[0].fields["Hardware Color"] as string) || "",
         }
       : null;
 
